@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GroupStatus {
+  DRAFT
+  FORMING
+  ACTIVE
+  COMPLETED
+  PAUSED
+  DISSOLVED
+}
+
+enum MemberStatus {
+  INVITED
+  ACTIVE
+  EXIT_REQUESTED
+  EXITED
+}
+
+enum CycleStatus {
+  UPCOMING
+  PENDING
+  FUNDED
+  PAID
+  OVERDUE
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  EXECUTED
+  REJECTED
+}
+
+model User {
+  id            String   @id @default(uuid())
+  walletAddress String   @unique
+  displayName   String?
+  email         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  memberships   GroupMember[]
+  notifications Notification[]
+
+  @@index([walletAddress])
+}
+
+model WalletNonce {
+  id            String   @id @default(uuid())
+  walletAddress String
+  nonce         String   @unique
+  expiresAt     DateTime
+  isUsed        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress])
+  @@index([nonce])
+}
+
+model SavingsGroup {
+  id                     String      @id @default(uuid())
+  onChainGroupId         Int?        @unique
+  name                   String
+  description            String
+  organizerWallet        String
+  usdcToken              String
+  contributionAmount     Decimal     @db.Decimal(28, 7)
+  targetAmount           Decimal     @db.Decimal(28, 7)
+  totalMembers           Int
+  paymentFrequency       String      @default("MONTHLY") // WEEKLY, BIWEEKLY, MONTHLY
+  cycleDurationDays      Int         @default(30)
+  approvalThreshold      Int         @default(3)
+  payoutModel            String      @default("ROTATING")
+  status                 GroupStatus @default(ACTIVE)
+  rules                  String
+  inviteToken            String      @unique @default(uuid())
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  members                GroupMember[]
+  cycles                 ContributionCycle[]
+  payments               PaymentRecord[]
+  withdrawals            WithdrawalProposal[]
+
+  @@index([organizerWallet])
+  @@index([status])
+}
+
+model GroupMember {
+  id               String       @id @default(uuid())
+  groupId          String
+  group            SavingsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  walletAddress    String
+  user             User?        @relation(fields: [walletAddress], references: [walletAddress], onDelete: SetNull)
+  displayName      String?
+  status           MemberStatus @default(INVITED)
+  rotationPosition Int
+  rulesAccepted    Boolean      @default(false)
+  totalContributed Decimal      @default(0) @db.Decimal(28, 7)
+  totalReceived    Decimal      @default(0) @db.Decimal(28, 7)
+  joinedAt         DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([groupId, walletAddress])
+  @@unique([groupId, rotationPosition])
+  @@index([walletAddress])
+  @@index([groupId])
+}
+
+model ContributionCycle {
+  id              String       @id @default(uuid())
+  groupId         String
+  group           SavingsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  cycleIndex      Int
+  recipientWallet String
+  targetAmount    Decimal      @db.Decimal(28, 7)
+  collectedAmount Decimal      @default(0) @db.Decimal(28, 7)
+  status          CycleStatus  @default(UPCOMING)
+  dueDate         DateTime
+  paidAt          DateTime?
+  payoutTxHash    String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  payments        PaymentRecord[]
+
+  @@unique([groupId, cycleIndex])
+  @@index([groupId])
+  @@index([recipientWallet])
+  @@index([status])
+}
+
+model PaymentRecord {
+  id             String            @id @default(uuid())
+  groupId        String
+  group          SavingsGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  cycleId        String
+  cycle          ContributionCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  memberWallet   String
+  amount         Decimal           @db.Decimal(28, 7)
+  txHash         String            @unique
+  onChainLedger  BigInt?
+  createdAt      DateTime          @default(now())
+
+  @@index([groupId])
+  @@index([cycleId])
+  @@index([memberWallet])
+}
+
+model WithdrawalProposal {
+  id                String           @id @default(uuid())
+  groupId           String
+  group             SavingsGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  requestId         Int
+  requesterWallet   String
+  recipientWallet   String
+  amount            Decimal          @db.Decimal(28, 7)
+  reason            String?
+  approvalCount     Int              @default(1)
+  requiredApprovals Int
+  approvers         Json?            // string[] of wallet addresses
+  status            WithdrawalStatus @default(PENDING)
+  txHash            String?
+  createdAt         DateTime         @default(now())
+  executedAt        DateTime?
+
+  @@unique([groupId, requestId])
+  @@index([groupId])
+  @@index([requesterWallet])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  userWallet String
+  user       User?    @relation(fields: [userWallet], references: [walletAddress], onDelete: Cascade)
+  title      String
+  message    String
+  type       String   @default("INFO")
+  isRead     Boolean  @default(false)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userWallet])
+  @@index([isRead])
+}
+
+model SyncState {
+  id         String   @id
+  lastLedger BigInt   @default(0)
+  lastCursor String?
+  updatedAt  DateTime @updatedAt
+}

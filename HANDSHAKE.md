@@ -120,6 +120,25 @@ Authorization: Bearer <accessToken>
 - `GET /api/blockchain/tx/:hash`
   - Checks confirmed status of an on-chain transaction hash.
 
+### 3.6 System Health & Monitoring (`/health`)
+- `GET /health` *(Public, No Auth Required)*
+  - Render cloud health check endpoint verifying process uptime, database connectivity, and on-chain configuration.
+  - Sample Response:
+    ```json
+    {
+      "status": "ok",
+      "service": "savecircle-backend",
+      "timestamp": "2026-11-21T21:20:00.000Z",
+      "uptimeSeconds": 120,
+      "database": "healthy",
+      "stellar": {
+        "network": "TESTNET",
+        "contractId": "CDSNM3LJEEDHPHKQBEUA5FS42SUMAWTEEKWHAIVWJYYYT6QY3B5HNYNB",
+        "usdcToken": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+      }
+    }
+    ```
+
 ---
 
 ## 4. Soroban Client Contract Invocation Guide

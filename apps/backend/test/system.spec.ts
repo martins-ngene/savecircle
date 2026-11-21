@@ -36,7 +36,9 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api', {
+      exclude: ['health'],
+    });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -375,6 +377,26 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
         .expect(201);
 
       expect(res.body).toHaveProperty('count');
+    });
+  });
+
+  describe('8. System Health & Observability', () => {
+    it('should return 200 OK and valid health metrics on /health', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/health')
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        status: 'ok',
+        service: 'savecircle-backend',
+        database: expect.any(String),
+        stellar: expect.objectContaining({
+          network: expect.any(String),
+          contractId: expect.any(String),
+        }),
+      });
+      expect(typeof res.body.uptimeSeconds).toBe('number');
+      expect(typeof res.body.timestamp).toBe('string');
     });
   });
 });

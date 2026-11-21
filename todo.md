@@ -37,15 +37,19 @@
 - [x] Implement Member Ledger query endpoint with expected vs paid reconciliation
 - [x] Build Soroban RPC event listener service to continuously index contract transactions
 - [x] Setup Swagger/OpenAPI interactive documentation at `/docs`
+- [x] Implement in-memory mock store and 23 automated system & regression tests (`npm test`)
 - [x] Add production entrypoint smoke test (`scripts/smoke-test.js`)
+- [x] Containerize backend with multi-stage Dockerfile and `docker-compose.yml`
 
 ## Phase 4: Frontend Handshake & Integration Assets
 - [x] Export TypeScript shared types and DTOs (`packages/shared`)
 - [x] Author `HANDSHAKE.md` detailing API endpoints, payloads, and contract invocation flows
 - [x] Document client-side transaction signing workflows for the Frontend team
 
-## Phase 5: Technical Report & Cloud Deployment
+## Phase 5: Technical Report, CI/CD Pipeline & Deployment
 - [x] Configure `render.yaml` Blueprint for backend and PostgreSQL hosting on Render
+- [x] Create GitHub Actions CI/CD pipeline (`.github/workflows/ci.yml`) for pre-flight testing and container verification
 - [x] Generate `TECHNICAL_REPORT.md` with testnet transaction hashes, explorer links, and test matrix
+- [x] Document local containerization in `LOCAL_DOCKER.md`
 - [x] Finalize `README.md` with developer setup and architecture documentation
 - [x] Verify 100% completion against the PRD requirements

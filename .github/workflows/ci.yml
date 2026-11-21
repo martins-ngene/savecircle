@@ -1,0 +1,94 @@
+name: SaveCircle CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smart-contract:
+    name: Soroban Smart Contract (18 Scenarios)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: Run Soroban Contract Tests (All 18 Scenarios)
+        run: |
+          cd contracts/group-savings
+          cargo test --verbose
+
+  backend-api:
+    name: Backend API & Regression Tests (23 Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Shared Types Package
+        run: npm --prefix packages/shared run build
+
+      - name: Generate Prisma Client
+        run: npm --prefix apps/backend run prisma:generate
+
+      - name: Build TypeScript & NestJS Application
+        run: npm --prefix apps/backend run build
+
+      - name: Pre-Flight Check - Verify Production Entrypoint
+        run: |
+          if [ ! -f apps/backend/dist/main.js ]; then
+            echo "::error::Critical deployment issue: apps/backend/dist/main.js is missing! Production container will fail to start."
+            ls -la apps/backend/dist/
+            exit 1
+          fi
+          echo "Verified dist/main.js production entrypoint exists."
+
+      - name: Production Entrypoint Smoke Test
+        run: node apps/backend/scripts/smoke-test.js
+
+      - name: Run End-to-End System & Regression Tests
+        run: npm --prefix apps/backend test
+
+  docker-build-check:
+    name: Docker Container Validation
+    runs-on: ubuntu-latest
+    needs: [backend-api]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          push: false
+          tags: savecircle-backend:ci-check

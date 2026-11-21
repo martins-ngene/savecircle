@@ -1,10 +1,3 @@
-databases:
-  - name: savecircle-db
-    databaseName: savecircle
-    user: savecircle_user
-    plan: free
-    postgresMajorVersion: "16"
-
 services:
   - type: web
     name: savecircle-backend
@@ -13,7 +6,7 @@ services:
     region: oregon
     rootDir: apps/backend
     buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: npx prisma db push --accept-data-loss && node dist/main
+    startCommand: node scripts/start-production.js
     healthCheckPath: /api/blockchain/config
     autoDeploy: true
     envVars:
@@ -25,7 +18,7 @@ services:
         value: api
       - key: DATABASE_URL
         fromDatabase:
-          name: savecircle-db
+          name: ticketchain-db
           property: connectionString
       - key: JWT_SECRET
         generateValue: true

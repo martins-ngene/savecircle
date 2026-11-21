@@ -48,6 +48,7 @@
 
 ## Phase 5: Technical Report, CI/CD Pipeline & Deployment
 - [x] Configure `render.yaml` Blueprint for backend and PostgreSQL hosting on Render
+- [x] Adapt backend and `render.yaml` for shared PostgreSQL multi-tenancy via isolated schema (`savecircle`)
 - [x] Create GitHub Actions CI/CD pipeline (`.github/workflows/ci.yml`) for pre-flight testing and container verification
 - [x] Generate `TECHNICAL_REPORT.md` with testnet transaction hashes, explorer links, and test matrix
 - [x] Document local containerization in `LOCAL_DOCKER.md`

@@ -2,7 +2,8 @@ databases:
   - name: savecircle-db
     databaseName: savecircle
     user: savecircle_user
-    plan: free
+    plan: 0.5c-1g
+    diskSizeGB: 15
     postgresMajorVersion: "16"
 
 services:
@@ -13,8 +14,8 @@ services:
     region: oregon
     rootDir: apps/backend
     buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: npx prisma db push --accept-data-loss && node dist/main
-    healthCheckPath: /api/blockchain/config
+    startCommand: node scripts/start-production.js
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: NODE_ENV

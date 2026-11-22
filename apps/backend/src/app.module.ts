@@ -9,12 +9,14 @@ import { LedgerModule } from './ledger/ledger.module';
 import { BlockchainModule } from './blockchain/blockchain.module';
 import { IndexerModule } from './indexer/indexer.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    HealthModule,
     AuthModule,
     GroupsModule,
     SchedulesModule,

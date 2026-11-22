@@ -1,24 +1,32 @@
+# Checkpoint & Progress Tracking (Must NOT be committed)
+RESUME.md
+**/RESUME.md
+
 # Dependencies
 node_modules/
 .pnp
 .pnp.js
 
 # Rust / Cargo
+contracts/group-savings/target/
+contracts/target/
 target/
 **/*.rs.bk
 Cargo.lock
+
+# Environment & credentials (Zero-tolerance: never commit secrets)
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
 
 # Build outputs
 dist/
 build/
 *.wasm
-
-# Environment & credentials
-.env
-.env.local
-.env.*.local
-*.pem
-*.key
 
 # Logs & temp
 *.log
@@ -27,6 +35,10 @@ yarn-debug.log*
 yarn-error.log*
 .turbo/
 
-# OS metadata
+# OS metadata & IDEs
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

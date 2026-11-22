@@ -47,6 +47,13 @@ Welcome to the **SaveCircle** backend and smart contract workspace. This documen
   - **Zero Private Key Custody**: The backend never accepts, generates, or stores user or organizer private keys. All transaction signing occurs client-side via Stellar Wallets Kit.
   - **Dual-State Reconciliation**: Off-chain ledger queries are fast and cached in PostgreSQL, but continuously reconciled against confirmed on-chain event streams via the background Soroban RPC indexer.
   - **Database Migration Guard**: Any unattended `prisma db push` command must include `--accept-data-loss` in `render.yaml` to prevent non-interactive deployment aborts.
+- **Render Cloud Deployment & PostgreSQL Schema Isolation Rule**:
+  - **Single Free Database Limit**: Render strictly limits accounts to at most one active free-tier PostgreSQL database. Never define a new `databases:` block with `plan: free` in `render.yaml` when an active database already exists on the account; doing so immediately aborts Blueprint sync with `(cannot have more than one active free tier database)`.
+  - **Shared Instance via Schema Multi-Tenancy**: Multiple projects must share a single PostgreSQL instance by partitioning data into isolated schemas (`?schema=<project_name>`, e.g. `?schema=savecircle`).
+  - **Blueprint Configuration**: In `render.yaml`, omit the `databases:` section and reference the existing database instance under `envVars:` using `fromDatabase` (e.g., `name: ticketchain-db, property: connectionString`) or set `DATABASE_URL` with `sync: false`.
+  - **Application-Level Schema Isolation**:
+    - The application startup runner (`scripts/start-production.js`) and database client (`PrismaService`) must verify and append/set `schema=<project_name>` on `DATABASE_URL` prior to running `prisma db push --accept-data-loss` or establishing pool connections.
+    - This guarantees that tables are created strictly in the project's dedicated schema without table collisions or cross-project interference.
 - **API Documentation**:
   - Maintain interactive Swagger / OpenAPI 3.0 documentation at `/docs`.
 

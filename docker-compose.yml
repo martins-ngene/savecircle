@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: savecircle-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: savecircle
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d savecircle"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: savecircle-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_PREFIX: api
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/savecircle?schema=public
+      JWT_SECRET: savecircle-docker-dev-jwt-secret-2026
+      JWT_EXPIRES_IN: 7d
+      STELLAR_NETWORK: TESTNET
+      STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+      STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+      SAVECIRCLE_CONTRACT_ID: CDSNM3LJEEDHPHKQBEUA5FS42SUMAWTEEKWHAIVWJYYYT6QY3B5HNYNB
+      USDC_TOKEN_CONTRACT_ID: CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+      INDEXER_ENABLED: "true"
+      INDEXER_POLL_INTERVAL_MS: "5000"
+    command: ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/main.js"]
+
+volumes:
+  postgres_data:

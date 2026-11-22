@@ -23,7 +23,14 @@ async function bootstrap() {
   });
 
   const apiPrefix = process.env.API_PREFIX || 'api';
-  app.setGlobalPrefix(apiPrefix);
+  app.setGlobalPrefix(apiPrefix, {
+    exclude: ['health'],
+  });
+
+  // Root redirect to interactive OpenAPI Swagger documentation
+  app.getHttpAdapter().getInstance().get('/', (_req: any, res: any) => {
+    res.redirect('/docs');
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

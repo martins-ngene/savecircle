@@ -15,7 +15,11 @@ The system combines:
 1. **On-Chain Financial Core (Soroban)**: A multi-group registry smart contract written in Rust managing member onboarding, testnet USDC contributions, cycle pool funding, rotating payouts, multi-member withdrawal approvals, and exit refunds.
 2. **Off-Chain Scheduling & Indexing Service (NestJS + Prisma)**: A backend platform providing cryptographic wallet challenge/verify authentication (SEP-0010 standard), contribution schedule generation, transparent member ledgers, in-app notifications, and a background Soroban RPC event listener.
 
-The smart contract passes **100% of required automated tests** across all **18 PRD scenarios (18 of 18 tests passing)**, and has been compiled and deployed live on Stellar Testnet.
+The system passes **100% of required automated tests** across both contract and backend suites:
+- **Soroban Smart Contract**: 18 of 18 test scenarios passing (TS-01 to TS-18).
+- **Backend API & System Suite**: 23 of 23 end-to-end integration and regression tests passing.
+- **Production Boot Smoke Test**: Verified entrypoint bootstrap without crashes.
+- **Continuous Integration**: GitHub Actions CI/CD pipeline catching deployment issues before production.
 
 ---
 

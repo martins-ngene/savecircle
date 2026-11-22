@@ -1,0 +1,30 @@
+.shimmer { display: grid; gap: 24px; min-width: 0; color: #17372b; }
+.shimmer-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.shimmer-cards[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.shimmer-cards[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.shimmer-card, .shimmer-panel { border-radius: 20px; background: #fefefe; }
+.shimmer-card { padding: 20px; display: grid; align-content: start; gap: 12px; }
+.shimmer-panel { display: grid; gap: 24px; padding: clamp(18px, 3vw, 30px); }
+.shimmer h2 { font-size: clamp(1.25rem, 2.4vw, 1.55rem); line-height: 1.3; letter-spacing: -.025em; }
+.shimmer p { color: #5c7467; font-size: .875rem; }
+.shimmer h2 + p { margin-top: 20px; }
+.shimmer .shimmer-bar { display: block; height: 16px; border-radius: 6px; background: #e9eee5; overflow: hidden; position: relative; }
+.shimmer .shimmer-bar::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 18%, #ffffffa8 50%, transparent 82%); transform: translateX(-100%); animation: savecircle-shimmer 1.65s ease-in-out infinite; }
+.shimmer-card .shimmer-bar { background: #dfe6dc; }
+.shimmer-card .shimmer-bar:first-child { width: 54%; height: 12px; }
+.shimmer-card .shimmer-bar:nth-child(2) { width: 86%; height: 28px; }
+.shimmer-card .shimmer-bar:last-child { width: 70%; height: 10px; }
+.shimmer-rows { display: grid; gap: 21px; width: min(100%, 80%); }
+.shimmer-rows > div { display: grid; grid-template-columns: 1.7fr repeat(3, 1fr); gap: clamp(7px, 2vw, 20px); }
+.shimmer-rows > [data-columns="3"] { grid-template-columns: 1.7fr 1fr 1.35fr; }
+.shimmer-rows > [data-columns="2"] { grid-template-columns: 1.7fr 1fr; }
+.shimmer-rows > [data-columns="1"] { grid-template-columns: minmax(0, 1fr); }
+.shimmer .shimmer-action { justify-self: start; }
+@keyframes savecircle-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .shimmer .shimmer-bar::after { animation: none; } }
+@media (max-width: 640px) {
+  .shimmer, .shimmer-cards { gap: 12px; }
+  .shimmer-cards, .shimmer-cards[data-count="3"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shimmer-card { padding: 14px; }
+  .shimmer-rows { width: 100%; gap: 12px; }
+}

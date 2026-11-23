@@ -70,6 +70,7 @@
   cursor: pointer;
 }
 .gm-workspace .gm-button:hover:not(:disabled) { border-color: #829c82; }
+.gm-workspace .gm-tabs .gm-button { min-height: 36px; padding: 5px 10px; font-size: .8125rem; }
 .gm-workspace :is(a, button, input, textarea, select):focus-visible { outline: 2px solid #537630; outline-offset: 3px; }
 .gm-workspace .gm-button:is([data-primary], [aria-current="page"]) { background: var(--gm-green); color: white; }
 .gm-workspace .gm-filters .gm-button[aria-current="page"] { background: var(--gm-soft); color: var(--gm-ink); }
@@ -139,3 +140,5 @@
   .gm-table[data-layout] td:first-child { grid-column: 1 / -1; }
   .gm-mobile-label { display: block; font-size: .7rem; color: var(--gm-muted); margin-bottom: 3px; }
 }
+
+.gm-preserve { white-space: pre-wrap; }

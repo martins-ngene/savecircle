@@ -1,174 +1,226 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Fragment, useEffect, useRef, useState, useTransition } from "react";
-import { DashboardDialog } from "../dashboard/controls";
-import { member } from "../dashboard/model";
-import { payoutView } from "../payouts/model";
-import { monthYear, previewToday, referenceCircle } from "../schedule/model";
-import { updateSchedulePreview, useSchedulePreview } from "../schedule/storage";
-import { GroupHeader, GroupLink, GroupLoading, GroupTable, tabs } from "./components";
-import { MemberDetails, Members } from "./members";
-import { ExitReview, ExitSubmission, Invitations, InviteSetup } from "./membership";
-import { exitDate, exitReason, groupActivity, groupHref, groupMembers, groupPath, organizer } from "./model";
-import { createExitRequest, registerProposal, stageProposal, type ScheduleProposal } from "./records";
-import { ProposalDraft, ProposalStatus, Rules } from "./rules";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useRef, useState, type FormEvent } from "react";
+import { apiRequest } from "@/lib/api";
+import { useWalletSession, type WalletSession } from "@/lib/wallet-session";
+import { circleDate, circleLabel, getCircleDetails, acceptCircleRules, type CircleDetails } from "../circles/api";
+import { CircleReader } from "../circles/circle-reader";
+import { shortWallet } from "../invitations/model";
+import { getGroupSchedule, type ScheduleCycle } from "../schedule/api";
+import { GroupFacts, GroupStats, GroupTable, tabs } from "./components";
+import { MembershipChain, type OnChainMemberships } from "./membership-chain";
 
-const circle = referenceCircle;
-const categories = ["All activity", "Contributions", "Payouts", "Membership", "Approvals"];
-const descriptions = {
-  members: "Surulere Savers · People, shared rules and the next step for your circle.",
-  invitations: "Manage invitation history and available member places.",
-  rules: "The agreed rules are visible to every member.",
-  exits: "Review member obligations before authorizing an exit or refund.",
-  activity: "Membership, contributions and group decisions in one timeline.",
-};
-const titles = {
-  members: "Group management", invitations: "Invitations", rules: "Rules & schedule",
-  exits: "Member exit request", activity: "Group activity",
-};
+const groupPath = "/dashboard/group-management";
+type Member = CircleDetails["members"][number];
 
-export function GroupProfile() {
-  const params = useSearchParams();
-  const view = params.get("view");
-  const account = params.get("tab") === "exits" && (view === "leave" || view === "recorded") ? member : organizer;
-  return <DashboardDialog className="dash-profile" title="Account details" label={
-    <><span className="dash-avatar">{account.initials}</span><span><strong>{account.name}</strong><small>{account.wallet}</small></span><span aria-hidden="true">⌄</span></>
-  }><p>Group management preview for {account.name}.</p></DashboardDialog>;
+async function loadGroup(id: string, _token: string, signal: AbortSignal) {
+  const [details, schedule] = await Promise.all([
+    getCircleDetails(id, signal),
+    getGroupSchedule(id, signal),
+  ]);
+  return { details, cycles: schedule.cycles };
 }
 
 export function GroupManagement() {
+  const session = useWalletSession();
+  return <div className="gm-workspace">
+    <header className="gm-heading"><h1>Group management</h1></header>
+    <CircleReader path={groupPath} read={loadGroup}>{(_circle, group) => session
+      ? <ManagedGroup initialGroup={group.details} cycles={group.cycles} session={session} />
+      : null}</CircleReader>
+  </div>;
+}
+
+function ManagedGroup({ initialGroup, cycles, session }: { initialGroup: CircleDetails; cycles: ScheduleCycle[]; session: WalletSession }) {
+  const [group, setGroup] = useState(initialGroup);
+  const [memberships, setMemberships] = useState<OnChainMemberships>({});
   const params = useSearchParams();
-  const router = useRouter();
-  const [checking, startChecking] = useTransition();
-  const [copiedCode, setCopiedCode] = useState<string>();
-  const root = useRef<HTMLDivElement>(null);
-  const mounted = useRef(false);
-  const preview = useSchedulePreview(circle.id);
-  const vm = payoutView(circle, previewToday, preview);
   const tab = tabs.find(([key]) => key === params.get("tab"))?.[0] ?? "members";
-  const view = params.get("view");
-  const filter = ["Active", "Invited", "Inactive", "Exited"].find(key => key.toLowerCase() === params.get("filter")) ?? "All";
-  const category = categories.find(key => key.toLowerCase() === params.get("filter")) ?? categories[0];
-  const hasExitReceipt = !!preview.exitRequest;
-  const hasReviewedExit = !!preview.exitReviewed;
-  const proposal = preview.proposal;
-  const headingState = [tab, view, filter, category, params.get("member"), proposal?.phase, !!proposal, hasExitReceipt, !!preview.setupInvitation, checking].join("|");
+  const isOrganizer = group.organizerWallet === session.walletAddress;
+  const current = group.members.find((member) => member.walletAddress === session.walletAddress);
+  const circleHref = `/dashboard/circles?id=${encodeURIComponent(group.id)}`;
+  const roster = group.members.map((member) => member.walletAddress).join(",");
+  const groupId = group.id;
 
-  useEffect(() => {
-    const heading = root.current?.querySelector("h1");
-    if (mounted.current && heading) {
-      heading.focus({ preventScroll: true });
-      heading.closest(".dash-workspace")?.scrollTo({ top: 0 });
-    }
-    mounted.current = true;
-  }, [headingState]);
+  const refreshGroup = useCallback(async () => {
+    setGroup(await getCircleDetails(groupId));
+  }, [groupId]);
 
-  if (!vm || checking || view === "loading") return <GroupLoading preview={view === "loading"} />;
+  const updateMember = useCallback((member: Member) => {
+    setGroup((previous) => ({ ...previous, members: previous.members.map((item) => item.walletAddress === member.walletAddress ? member : item) }));
+  }, []);
 
-  const people = groupMembers(vm);
-  const ada = people.find(person => person.isAda)!;
-  const selected = tab === "members" ? people.find(person => person.id === params.get("member")) : undefined;
-  const setup = tab === "invitations" && view === "setup";
-  const invitation = preview.setupInvitation;
-  const memberView = tab === "exits" && (view === "leave" || view === "recorded");
-  const proposalView = tab === "rules" && view === "proposal";
-
-  function submitProposal(draft: ScheduleProposal) {
-    updateSchedulePreview(circle.id, current => {
-      const latest = payoutView(circle, previewToday, current);
-      const future = latest?.plan.cycles.filter(item => item.status === "Upcoming" && item.due > previewToday).map(item => item.number) ?? [];
-      const next = stageProposal(current.proposal, draft, future, circle.grace);
-      return next === current.proposal ? current : { ...current, proposal: next };
-    });
-  }
-
-  let title: string = titles[tab];
-  let description = descriptions[tab];
-  let snapshot: string | undefined;
-  let content;
-  if (view === "unavailable") {
-    title = "Group records unavailable";
-    description = "The latest membership and financial records could not be verified.";
-    snapshot = "Latest records unavailable";
-    content = <section className="gm-card">
-      <span className="gm-eyebrow gm-error">Connection interrupted</span>
-      <h2>The latest group records are unavailable.</h2>
-      <p>Retry to verify the member directory, current rules, and exit eligibility.</p>
-      <div className="gm-unknown"><strong>Active members: —</strong><strong>Available group funds: —</strong></div>
-      <div><button className="gm-button" data-primary onClick={() => startChecking(() => router.replace(groupPath))}>Retry group records</button></div>
-      <p>Check the reference for a previously submitted transaction before retrying it.</p>
-    </section>;
-  } else if (setup) {
-    title = invitation ? copiedCode === invitation.code ? "Invitation link copied" : "Invitation ready" : "Invite a member";
-    description = invitation ? "Setup preview · Registration is required to become an active member." : "Setup preview · One place remains before the circle starts.";
-    snapshot = "Surulere Savers · Setup · May 27, 2025";
-    content = <InviteSetup vm={vm} invitation={invitation} onCopied={() => setCopiedCode(invitation?.code)} generate={label => {
-      updateSchedulePreview(circle.id, current => current.setupInvitation ? current : {
-        ...current, setupInvitation: { label: label.trim().slice(0, 60), code: `surulere-${crypto.randomUUID().slice(0, 8)}` },
-      });
-    }} />;
-  } else if (memberView) {
-    title = hasExitReceipt ? "Exit request recorded" : "Request to leave the circle";
-    description = hasExitReceipt ? "EX-001 · Saved for organizer review." : "Ask the organizer to review your eligibility and remaining commitments.";
-    snapshot = hasExitReceipt ? exitDate : "Aug 5, 2025 · Before exit review";
-    content = <ExitSubmission person={ada} recorded={hasExitReceipt} submit={reason => {
-      updateSchedulePreview(circle.id, current => {
-        const request = createExitRequest(current.exitRequest, reason);
-        return request === current.exitRequest ? current : { ...current, exitRequest: request };
-      });
-      router.replace(groupHref("exits", { view: "recorded" }));
-    }} />;
-  } else if (proposalView) {
-    title = !proposal ? "Propose a schedule change" : proposal.phase === "registering" ? "Confirming your proposal" : "Proposal awaiting approval";
-    description = !proposal ? "Financial rule changes require group approval." : proposal.phase === "registering" ? "Your preview wallet signed the proposal. Registration is pending." : "SC-004 · The current rules apply while members review the proposal.";
-    content = proposal
-      ? <ProposalStatus vm={vm} proposal={proposal} confirm={() => updateSchedulePreview(circle.id, current => {
-        const registered = registerProposal(current.proposal);
-        return registered === current.proposal ? current : { ...current, proposal: registered };
-      })} />
-      : <ProposalDraft vm={vm} submit={submitProposal} />;
-  } else if (tab === "invitations") {
-    content = <Invitations members={people} hasSetupInvite={!!invitation} />;
-  } else if (tab === "rules") {
-    content = <Rules vm={vm} proposal={proposal} />;
-  } else if (tab === "exits") {
-    content = <ExitReview vm={vm} person={ada} created={hasExitReceipt} request={{ reason: preview.exitRequest?.reason ?? exitReason, reviewed: hasReviewedExit }}
-      keepPending={() => updateSchedulePreview(circle.id, current => current.exitReviewed ? current : { ...current, exitReviewed: true })} />;
-  } else if (tab === "activity") {
-    const events = groupActivity(vm, preview).filter(event => category === categories[0] || event.category === category);
-    content = <>
-      <nav className="gm-tabs" aria-label="Filter group activity">{categories.map(label => <Link key={label} className="gm-button"
-        href={groupHref("activity", label === categories[0] ? {} : { filter: label.toLowerCase() })}
-        aria-current={category === label ? "page" : undefined}>{label}</Link>)}</nav>
+  return <>
+    <div className="gm-actor">
+      <strong>{current?.displayName || shortWallet(session.walletAddress)} · {isOrganizer ? "Organizer" : "Member"}</strong>
+      <Link href={circleHref}>{group.name}</Link>
+    </div>
+    <nav className="gm-tabs" aria-label="Group management sections">
+      {tabs.map(([key, label]) => <Link className="gm-button" key={key} aria-current={tab === key ? "page" : undefined}
+        href={`${groupPath}?${new URLSearchParams({ circle: group.id, tab: key })}`}>{label}</Link>)}
+    </nav>
+    {tab === "members" && <>
+      <GroupStats items={[
+        ["Spots reserved", `${group.members.length} of ${group.totalMembers}`],
+        ["Active members", group.members.filter((member) => member.status === "ACTIVE").length],
+        ["Rules accepted", group.members.filter((member) => member.rulesAccepted).length],
+        ["On-chain group", group.onChainGroupId ?? "Unlinked"],
+      ]} />
       <section className="gm-card">
-        {events.length ? <GroupTable label="Group activity" layout="activity" headers={["Event", "Member", "Timestamp · UTC", "Reference"]}
-          rows={events.map(event => ({ key: event.reference, cells: [
-            <Fragment key="event"><strong>{event.name}</strong><small>{event.details}</small></Fragment>, event.member, <time key="time" dateTime={event.date}>{event.time}</time>,
-            event.href ? <Link key="reference" href={event.href}>{event.reference}</Link> : event.reference,
-          ] }))} /> : <div role="status"><h2>No {category.toLowerCase()} activity yet</h2><p>Confirmed records appear here as the circle progresses.</p></div>}
+        <h2>Members</h2>
+        <GroupTable label="Circle members" layout="members"
+          headers={["Member", "Wallet", "Payout spot", "Membership", "Group rules", "Stellar Testnet"]}
+          rows={[...group.members].sort((a, b) => a.rotationPosition - b.rotationPosition).map((member) => ({
+            key: member.walletAddress,
+            cells: [
+              <strong key="name">{member.displayName || "Member"}{member.walletAddress === session.walletAddress && " (you)"}</strong>,
+              <code key="wallet" title={member.walletAddress}>{shortWallet(member.walletAddress)}</code>,
+              member.rotationPosition,
+              circleLabel(member.status),
+              member.rulesAccepted ? "Accepted" : "Awaiting acceptance",
+              group.onChainGroupId == null ? "Unlinked" : memberships[member.walletAddress]?.label ?? "Checking",
+            ],
+          }))} />
       </section>
-      <aside className="gm-card gm-soft"><h3>About this activity</h3><p>The preview shows confirmed contributions and released payouts alongside member requests and group decisions.</p></aside>
-    </>;
-  } else if (selected) {
-    title = selected.name;
-    description = `Active member · Payout position ${selected.position} of ${circle.members} · ${monthYear(selected.turn.due)}`;
-    content = <MemberDetails person={selected} vm={vm} />;
-  } else {
-    if (filter !== "All") {
-      title = "Members";
-      description = "Membership status is separate from contribution status.";
+      {group.onChainGroupId == null
+        ? <section className="gm-card"><h2>Membership actions</h2><p>Link the circle to Stellar Testnet to register its members on-chain.</p>
+          {current?.status === "INVITED" && !current.rulesAccepted && <AcceptGroupRules group={group} session={session} onAccepted={updateMember} />}
+        </section>
+        : <MembershipChain key={roster} group={group} session={session} onRead={setMemberships} onAccepted={updateMember} />}
+    </>}
+    {tab === "invitations" && <>
+      {isOrganizer && <ShareInvitation token={group.inviteToken} />}
+      {isOrganizer && <ReserveMember group={group} session={session} onReserved={refreshGroup} />}
+      <section className="gm-card"><h2>Invited members</h2>
+        {group.members.some((member) => member.status === "INVITED") ? <ul>
+          {group.members.filter((member) => member.status === "INVITED").map((member) => <li key={member.walletAddress}>{member.displayName || shortWallet(member.walletAddress)} · Spot {member.rotationPosition}</li>)}
+        </ul> : <p>No members are awaiting acceptance.</p>}
+      </section>
+    </>}
+    {tab === "rules" && <>
+      <section className="gm-card"><h2>Group rules</h2><p className="gm-preserve">{group.rules}</p><GroupFacts rows={[
+        ["Contribution", `${group.contributionAmount} USDC`],
+        ["Frequency", circleLabel(group.paymentFrequency)],
+        ["Payout model", circleLabel(group.payoutModel)],
+        ["Withdrawal approvals", `${group.approvalThreshold} of ${group.totalMembers}`],
+      ]} /></section>
+      <Link className="gm-button" href={`/dashboard/schedule?circle=${encodeURIComponent(group.id)}`}>View contribution schedule</Link>
+    </>}
+    {tab === "exits" && <section className="gm-card"><h2>Membership exits</h2>
+      {group.members.some((member) => member.status === "EXIT_REQUESTED" || member.status === "EXITED")
+        ? <ul>{group.members.filter((member) => member.status === "EXIT_REQUESTED" || member.status === "EXITED").map((member) => (
+          <li key={member.walletAddress}>{member.displayName || shortWallet(member.walletAddress)} · {circleLabel(member.status)}</li>
+        ))}</ul>
+        : <p>No exits are recorded for this circle.</p>}
+    </section>}
+    {tab === "activity" && <GroupActivity cycles={cycles} />}
+  </>;
+}
+
+function GroupActivity({ cycles }: { cycles: ScheduleCycle[] }) {
+  const recorded = cycles.filter((cycle) => cycle.status === "PAID" || Number(cycle.collectedAmount) > 0);
+  return <section className="gm-card"><h2>Cycle activity</h2>
+    {recorded.length ? <GroupTable label="Cycle activity" headers={["Cycle", "Due date", "Collected", "Status"]}
+      rows={recorded.map((cycle) => ({
+        key: String(cycle.cycleIndex),
+        cells: [`Cycle ${cycle.cycleIndex}`, circleDate(cycle.dueDate), `${cycle.collectedAmount} USDC`, circleLabel(cycle.status)],
+      }))} /> : <p>No contributions or payouts have been recorded for this circle yet.</p>}
+  </section>;
+}
+
+function ShareInvitation({ token }: { token: string }) {
+  const [message, setMessage] = useState("");
+  const href = `/connect?invite=${encodeURIComponent(token)}`;
+  return <section className="gm-card"><h2>Circle invitation</h2>
+    <div className="gm-tabs">
+      <Link className="gm-button" href={href}>Open invitation</Link>
+      <button className="gm-button" type="button" onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(new URL(href, window.location.origin).href);
+          setMessage("Invitation link copied.");
+        } catch {
+          setMessage("Open the invitation to copy the link from your browser.");
+        }
+      }}>Copy invitation link</button>
+    </div>
+    <p role="status">{message}</p>
+  </section>;
+}
+
+function ReserveMember({ group, session, onReserved }: { group: CircleDetails; session: WalletSession; onReserved: () => Promise<void> }) {
+  const [wallet, setWallet] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [position, setPosition] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const lock = useRef(false);
+  const taken = new Set(group.members.map((member) => member.rotationPosition));
+  const spots = Array.from({ length: group.totalMembers }, (_, index) => index + 1).filter((spot) => !taken.has(spot));
+  const chosen = spots.includes(Number(position)) ? Number(position) : spots[0];
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!chosen || lock.current) return;
+    const address = wallet.trim().toUpperCase();
+    setError("");
+    setNotice("");
+    if (group.members.some((member) => member.walletAddress === address)) {
+      setError("That wallet already has a spot in this circle.");
+      return;
     }
-    content = <Members vm={vm} members={people} filter={filter} />;
+    lock.current = true;
+    setBusy(true);
+    try {
+      await apiRequest(`groups/${encodeURIComponent(group.id)}/members`, { token: session.accessToken, body: {
+        walletAddress: address, rotationPosition: chosen, ...(displayName.trim() && { displayName: displayName.trim() }),
+      } });
+      setWallet("");
+      setDisplayName("");
+      setPosition("");
+      setNotice(`Reserved spot ${chosen}. Share the circle invitation with this member.`);
+      try { await onReserved(); } catch { setError("Refresh the group to see the updated membership list."); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reserve the membership spot.");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
   }
 
-  return <div className="gm-workspace" ref={root}>
-    <GroupHeader title={title} description={description} tab={tab} snapshot={snapshot} memberView={memberView} unavailable={view === "unavailable"} />
-    {content}
-    {tab === "members" && view !== "unavailable" && !selected && <div className="gm-preview-links">
-      <GroupLink href={groupHref("members", { view: "loading" })}>Preview loading state</GroupLink>
-      <GroupLink href={groupHref("members", { view: "unavailable" })}>Preview unavailable records</GroupLink>
-    </div>}
+  return <section className="gm-card">
+    <h2>Reserve a member’s spot</h2>
+    {spots.length ? <form className="gm-stack" onSubmit={(event) => void submit(event)}>
+      <label className="gm-field">Stellar wallet address<input value={wallet} onChange={(event) => setWallet(event.target.value)} maxLength={56} pattern="[Gg][A-Za-z2-7]{55}" required disabled={busy} /></label>
+      <label className="gm-field">Display name <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={60} disabled={busy} /></label>
+      <label className="gm-field">Payout spot<select value={chosen} onChange={(event) => setPosition(event.target.value)} disabled={busy}>
+        {spots.map((spot) => <option value={spot} key={spot}>{spot}</option>)}
+      </select></label>
+      <div><button className="gm-button" data-primary disabled={busy}>{busy ? "Reserving…" : "Reserve spot"}</button></div>
+    </form> : <p>Every payout spot is reserved.</p>}
+    <p role="status">{notice}</p>
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+function AcceptGroupRules({ group, session, onAccepted }: { group: CircleDetails; session: WalletSession; onAccepted: (member: Member) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function accept() {
+    setBusy(true);
+    setError("");
+    try {
+      onAccepted(await acceptCircleRules(group.id, session.accessToken));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not record rule acceptance.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <div className="gm-stack"><p className="gm-preserve">{group.rules}</p>
+    <div><button type="button" className="gm-button" data-primary disabled={busy} onClick={() => void accept()}>{busy ? "Accepting…" : "Accept group rules"}</button></div>
+    {error && <p role="alert">{error}</p>}
   </div>;
 }

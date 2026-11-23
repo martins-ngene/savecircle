@@ -99,6 +99,7 @@ export class LedgerService {
             payments: true,
           },
         },
+        withdrawals: { where: { status: 'EXECUTED' } },
       },
     });
 
@@ -116,7 +117,8 @@ export class LedgerService {
       }
     }
 
-    const availableBalance = totalPoolCollected.sub(totalPayoutsDisbursed);
+    const totalWithdrawn = group.withdrawals.reduce((total, proposal) => total.add(proposal.amount), new Prisma.Decimal(0));
+    const availableBalance = totalPoolCollected.sub(totalPayoutsDisbursed).sub(totalWithdrawn);
 
     return {
       groupId: group.id,
@@ -124,6 +126,7 @@ export class LedgerService {
       totalTargetPool: group.targetAmount.toString(),
       totalCollected: totalPoolCollected.toString(),
       totalPayoutsDisbursed: totalPayoutsDisbursed.toString(),
+      totalWithdrawn: totalWithdrawn.toString(),
       availableBalance: availableBalance.toString(),
       memberCount: group.members.length,
       members: group.members.map((m) => ({

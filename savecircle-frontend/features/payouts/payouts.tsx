@@ -1,82 +1,100 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
-import { sampleCircles } from "../circles/model";
-import { useSavedCircles } from "../circles/storage";
-import { referenceCircle } from "../schedule/model";
-import { updateSchedulePreview, useSchedulePreview } from "../schedule/storage";
-import { PayoutHeading, PayoutLink, PayoutLoading, PayoutTotals } from "./components";
-import { PayoutFlow } from "./flow";
-import { beforeFirstCycle, confirmTime, payoutHref, payoutPreviewDate, payoutView, submitTime } from "./model";
-import { PayoutAccounting, PayoutHistory, PayoutOrder, PayoutOverview } from "./overview";
-import { nextRelease, type ReleaseEvent } from "./release";
+import { Address } from "@stellar/stellar-sdk";
+import Link from "next/link";
+import { useCallback } from "react";
+import { getBlockchainConfig, invokeSoroban } from "@/lib/stellar";
+import { useWalletSession } from "@/lib/wallet-session";
+import { circleDate, circleLabel, type ApiCircle } from "../circles/api";
+import { CircleReader } from "../circles/circle-reader";
+import { shortWallet } from "../invitations/model";
+import { getGroupSchedule } from "../schedule/api";
+import { PayoutFacts, PayoutHeading } from "./components";
+import { contractStatus, displayUsdc, isActiveMember, readChainCircle, uint, type ChainCycle, type ChainMember } from "./contract-state";
+import { CircleTransactionStatus, useCircleTransaction } from "./use-circle-transaction";
+import { useChainState } from "./use-chain-state";
+
+type Schedule = Awaited<ReturnType<typeof getGroupSchedule>>;
 
 export function Payouts() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const [checking, startChecking] = useTransition();
-  const circles = [referenceCircle, ...useSavedCircles(), ...sampleCircles];
-  const id = params.get("circle") ?? referenceCircle.id;
-  const circle = circles.find(item => item.id === id);
-  const preview = useSchedulePreview(id);
-  const sample = circle === referenceCircle || sampleCircles.some(item => item.id === id);
-  const snapshot = params.get("snapshot");
-  const first = sample && snapshot === "first";
-  const today = first ? beforeFirstCycle : sample ? payoutPreviewDate : new Date();
-  const vm = circle && payoutView(circle, today, first ? {} : preview);
-  const back = payoutHref(id, undefined, first ? "first" : undefined);
-  const picker = <select className="payout-button" aria-label="Savings circle" value={id} onChange={event => router.push(payoutHref(event.target.value))}>
-    {circles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-  </select>;
-
-  function refreshApprovals() {
-    if (!circle || !vm) return;
-    updateSchedulePreview(id, current => {
-      const latest = payoutView(circle, today, current);
-      if (!latest || latest.status !== "approvals" || !latest.authorized) return current;
-      return { ...current, payoutApprovals: { ...current.payoutApprovals, [latest.cycle.number]: latest.approvals + 1 } };
-    });
-  }
-
-  function update(event: ReleaseEvent) {
-    if (!circle || !vm || first) return;
-    updateSchedulePreview(id, current => {
-      const latest = payoutView(circle, today, current);
-      if (!latest || latest.cycle.number !== vm.cycle.number) return current;
-      const saved = latest.release;
-      const state = nextRelease(saved?.state, event, latest.status);
-      if (!state || state === saved?.state) return current;
-      const submitted = saved?.submitted ?? submitTime;
-      const record = state === "paid" ? { state, submitted, confirmed: confirmTime } : { state, submitted };
-      return { ...current, payouts: { ...current.payouts, [vm.cycle.number]: record } };
-    });
-  }
-
-  if (checking || snapshot === "loading") return <PayoutLoading onCancel={snapshot === "loading" ? back : undefined}>{picker}</PayoutLoading>;
-  if (!vm || !circle) return <div className="payout-workspace">
-    <PayoutHeading description="Choose a savings circle to view its payout plan." />
-    <PayoutLink href={payoutHref()}>View Surulere Savers</PayoutLink>
-  </div>;
-
-  const isReleaseScreen = params.get("screen") === "release";
-  const showFlow = !first && (vm.status === "paid" || isReleaseScreen && ["ready", "pending"].includes(vm.status));
+  const session = useWalletSession();
   return <div className="payout-workspace">
-    {showFlow ? <PayoutFlow key={`${id}:${vm.cycle.number}`} vm={vm} back={back} showBack={isReleaseScreen} update={update} />
-      : <>
-        <PayoutHeading title={circle.model === "Fixed" ? "Fixed payout" : undefined} description={circle.model === "Fixed" ? "One shared pool for the agreed recipient." : undefined}>
-          <div className="payout-actions">{picker}<button className="payout-button" onClick={() => startChecking(() => router.refresh())}>{vm.status === "ready" ? "Refresh status · Ready" : "Refresh status"}</button></div>
-        </PayoutHeading>
-        <PayoutTotals vm={vm} />
-        <PayoutOverview vm={vm} refreshApprovals={refreshApprovals} />
-      </>}
-    {(!showFlow || vm.status === "paid") && <>
-      <PayoutOrder vm={vm} /><PayoutHistory vm={vm} /><PayoutAccounting vm={vm} />
-      <div className="payout-actions payout-preview-options">
-        {sample && <PayoutLink href={first ? payoutHref(id) : payoutHref(id, undefined, "first")}>{first ? "Current payout preview" : "Preview before the first cycle"}</PayoutLink>}
-        <PayoutLink href={payoutHref(id, undefined, "loading")}>Preview loading state</PayoutLink>
-        {showFlow && picker}
+    <PayoutHeading description="Review cycle funding, payout recipients, and completed releases." />
+    <CircleReader path="/dashboard/payouts" read={readPayoutSchedule}>{(circle, schedule) => <>
+      <h2>{circle.name}</h2>
+      <div className="payout-actions">
+        <Link className="button outline" href={`/dashboard/schedule?circle=${encodeURIComponent(circle.id)}`}>View schedule</Link>
+        <Link className="button outline" href={`/dashboard/ledger?circle=${encodeURIComponent(circle.id)}`}>View my ledger</Link>
       </div>
-    </>}
+      {circle.onChainGroupId == null
+        ? <><p role="status">Link this circle to Stellar Testnet in My Circles to enable payout releases.</p><IndexedCycles schedule={schedule} /></>
+        : session && <LinkedPayouts circle={circle} groupId={circle.onChainGroupId} wallet={session.walletAddress} schedule={schedule} />}
+    </>}</CircleReader>
   </div>;
+}
+
+function readPayoutSchedule(circleId: string, _token: string, signal: AbortSignal) {
+  return getGroupSchedule(circleId, signal);
+}
+
+function IndexedCycles({ schedule }: { schedule: Schedule }) {
+  return <section className="payout-card payout-stack"><h2>Cycle schedule</h2>
+    {schedule.cycles.length ? <ul>{schedule.cycles.map((cycle) => <li key={cycle.cycleIndex}>
+      Cycle {cycle.cycleIndex} · {circleDate(cycle.dueDate)} · {cycle.recipientName} · {circleLabel(cycle.status)}
+    </li>)}</ul> : <p>No cycles have been scheduled.</p>}
+  </section>;
+}
+
+function LinkedPayouts({ circle, groupId, wallet, schedule }: { circle: ApiCircle; groupId: number; wallet: string; schedule: Schedule }) {
+  const load = useCallback(async (signal: AbortSignal) => {
+    const config = await getBlockchainConfig(signal);
+    const chain = await readChainCircle(config, groupId, circle.organizerWallet, wallet);
+    if (chain.group.total_members !== circle.totalMembers) throw new Error("The linked group’s member limit differs from the circle record.");
+    const keys = schedule.cycles.map((cycle) => chain.key("Cycle", uint(cycle.cycleIndex)));
+    const records = keys.length ? await chain.read(keys) : undefined;
+    const cycles = schedule.cycles.map((cycle, index) => ({ schedule: cycle, chain: records?.<ChainCycle>(keys[index]) }));
+    const fundedRecipients = [...new Set(cycles.flatMap(({ chain }) => chain && chain.status !== contractStatus.paidCycle && chain.collected_amount >= chain.target_amount ? [chain.recipient] : []))];
+    const recipientKeys = fundedRecipients.map((recipient) => chain.key("Member", Address.fromString(recipient).toScVal()));
+    const recipients = recipientKeys.length ? await chain.read(recipientKeys) : undefined;
+    const activeRecipients = new Set(fundedRecipients.filter((_, index) => isActiveMember(recipients?.<ChainMember>(recipientKeys[index]))));
+    return { ...chain, cycles, activeRecipients };
+  }, [circle.organizerWallet, circle.totalMembers, groupId, schedule.cycles, wallet]);
+
+  const { record, error, loading, refresh } = useChainState(load);
+  const transaction = useCircleTransaction(wallet, groupId, "payout", refresh);
+
+  if (!record && loading) return <p role="status">Checking Stellar Testnet payout records…</p>;
+  return <>
+    {error && <p role="alert">{error}</p>}
+    <div className="payout-actions"><button className="button outline" type="button" disabled={loading || transaction.busy} onClick={refresh}>Refresh payouts</button></div>
+    <CircleTransactionStatus transaction={transaction} />
+    {record && <>
+      {!isActiveMember(record.member) && <p role="status">Your linked wallet must be an active on-chain member to release a payout.</p>}
+      <section className="payout-card payout-stack"><h2>Contract accounting</h2><PayoutFacts rows={[
+        ["Available group funds", displayUsdc(record.accounting.available_balance)],
+        ["Total funds paid out", displayUsdc(record.accounting.total_funds_paid_out)],
+      ]} /></section>
+      <section className="payout-card payout-stack"><h2>Payout cycles</h2>
+        {record.cycles.length ? <ol className="payout-cycle-grid">{record.cycles.map(({ schedule: cycle, chain }) => {
+          const member = circle.members.find((item) => item.walletAddress === chain?.recipient);
+          const paid = chain?.status === contractStatus.paidCycle;
+          const recipient = chain && member?.rotationPosition === cycle.cycleIndex ? member.displayName || shortWallet(member.walletAddress) : "Unassigned";
+          const funded = !!chain && chain.collected_amount >= chain.target_amount;
+          const ready = chain && !paid && funded && recipient !== "Unassigned" && record.activeRecipients.has(chain.recipient) &&
+            isActiveMember(record.member) && record.accounting.available_balance >= chain.target_amount;
+          return <li className="payout-card payout-stack" key={cycle.cycleIndex}>
+            <h3>Cycle {cycle.cycleIndex}</h3><p>{circleDate(cycle.dueDate)}</p>
+            <PayoutFacts rows={[
+              ["Recipient", recipient],
+              ["Pool target", chain ? displayUsdc(chain.target_amount) : "Unavailable"],
+              ["Collected", chain ? displayUsdc(chain.collected_amount) : "Unavailable"],
+              ["Status", paid ? "Paid" : funded ? "Funded" : chain ? "Awaiting funding" : "Unavailable"],
+            ]} />
+            {ready && <button type="button" className="button primary" disabled={loading || !!error || transaction.locked}
+              onClick={() => void transaction.submit((onSubmitted) => invokeSoroban(wallet, { method: "execute_payout", groupId, cycleIndex: cycle.cycleIndex }, { onSubmitted }))}>Release payout</button>}
+          </li>;
+        })}</ol> : <p>No cycles have been scheduled.</p>}
+      </section>
+    </>}
+  </>;
 }

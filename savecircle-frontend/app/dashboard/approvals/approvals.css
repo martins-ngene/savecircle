@@ -47,6 +47,8 @@
   gap: 14px;
   overflow-wrap: anywhere;
 }
+.approval-withdrawal-form label { display: grid; gap: 6px; font-weight: 650; }
+.approval-withdrawal-form input { min-height: 44px; min-width: 0; padding: 8px 12px; border: 1px solid var(--approval-line); border-radius: 10px; font: inherit; }
 .approval-workspace .approval-amount { font-size: clamp(1.55rem, 3.4vw, 2.4rem); }
 .approval-note { background: var(--approval-soft); }
 .approval-note h2 { font-size: clamp(1rem, 1.5vw, 1.18rem); letter-spacing: -.012em; }

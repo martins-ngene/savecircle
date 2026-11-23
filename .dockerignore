@@ -3,6 +3,6 @@ target
 dist
 build
 .git
-.env
-.env.local
+**/.env
+**/.env.*
 *.log

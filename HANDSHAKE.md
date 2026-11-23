@@ -3,7 +3,8 @@
 > **Document Version**: 1.0.0  
 > **Target Audience**: Frontend Developer & UI/UX Integration Engineer  
 > **Backend Base URL (Local)**: `http://localhost:4000/api`  
-> **Interactive Swagger OpenAPI**: `http://localhost:4000/docs`  
+> **Backend Base URL (Production)**: `https://savecircle-backend.onrender.com/api`\
+> **Interactive Swagger OpenAPI**: [Local](http://localhost:4000/docs) · [Production](https://savecircle-backend.onrender.com/docs)\
 > **Stellar Network**: Stellar Testnet  
 
 ---
@@ -35,7 +36,7 @@ sequenceDiagram
 
     FE->>BE: POST /api/auth/challenge { walletAddress: "G..." }
     BE-->>FE: Returns { message: "Sign this message to authenticate...", expiresAt }
-    FE->>FE: Sign message via wallet (Freighter: signMessage / signAuthEntry)
+    FE->>FE: Sign the challenge message with Freighter signMessage (SEP-53)
     FE->>BE: POST /api/auth/verify { walletAddress, signature, message }
     BE-->>FE: Returns { accessToken: "jwt...", walletAddress }
 ```
@@ -71,10 +72,10 @@ Authorization: Bearer <accessToken>
       "cycleDurationDays": 30,
       "approvalThreshold": 3,
       "payoutModel": "ROTATING",
-      "rules": "1. Must fund by the 1st. 2. Payout order is immutable.",
-      "onChainGroupId": 1
+      "rules": "1. Must fund by the 1st. 2. Payout order is immutable."
     }
     ```
+  - To create an API circle already linked to Stellar, send both `onChainGroupId` and `creationTxHash`.
 - `GET /api/groups/my-circles` *(Auth Required)*
   - Returns array of groups where the authenticated user is either the organizer or a member.
 - `GET /api/groups/:id`
@@ -85,6 +86,10 @@ Authorization: Bearer <accessToken>
   - Body: `{ "inviteToken": "uuid", "displayName": "Tunde", "rotationPosition": 2 }`
 - `POST /api/groups/:id/accept-rules` *(Auth Required)*
   - Confirms rule acceptance for the logged-in member.
+- `POST /api/groups/:id/link-on-chain` *(Organizer Only)*
+  - Body `{ "txHash": "<confirmed create_group transaction hash>" }`.
+  - Verifies the transaction against the configured Testnet contract and the circle’s organizer and terms, stores the returned group ID, and returns the updated circle.
+  - After linking, the organizer registers each member’s assigned position on-chain. Each member signs rule acceptance using their own wallet.
 
 ### 3.3 Contribution Schedules (`/api/schedules`)
 - `GET /api/schedules/group/:groupId`
@@ -112,7 +117,7 @@ Authorization: Bearer <accessToken>
     }
     ```
 - `GET /api/ledger/group/:groupId/summary`
-  - Returns aggregate group financial state (`totalTargetPool`, `totalCollected`, `totalPayoutsDisbursed`, `availableBalance`, member statuses).
+  - Returns indexed group financial state (`totalTargetPool`, `totalCollected`, `totalPayoutsDisbursed`, `totalWithdrawn`, `availableBalance`, member statuses).
 
 ### 3.5 Blockchain & Explorer Helpers (`/api/blockchain`)
 - `GET /api/blockchain/config`
@@ -145,6 +150,8 @@ Authorization: Bearer <accessToken>
 
 The Frontend interacts directly with the Soroban contract for all value-bearing transactions.
 
+Create the API circle first. The organizer can sign `create_group` from the circle details page and link the confirmed transaction. In Group Management, the organizer signs `register_member` for each payout position, including their own. Each member signs `accept_rules` before contributing. Testnet wallets need XLM for fees and the configured Testnet USDC for contributions.
+
 ### 4.1 Required Contract Methods:
 
 ```typescript
@@ -153,7 +160,7 @@ contract.contribute({
   member: userAddress,
   group_id: 1,
   cycle_index: 1,
-  amount: 100000000n, // 100 USDC (7 decimals)
+  amount: 1000000000n, // 100 USDC (7 decimals)
 });
 
 // 2. Execute Payout for Funded Cycle
@@ -167,7 +174,7 @@ contract.execute_payout({
 contract.request_withdrawal({
   requester: userAddress,
   group_id: 1,
-  amount: 50000000n, // 50 USDC
+  amount: 500000000n, // 50 USDC
   recipient: recipientAddress,
 });
 

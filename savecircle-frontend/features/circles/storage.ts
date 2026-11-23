@@ -31,12 +31,3 @@ function parse(value: string): SavedCircle[] {
 export function useSavedCircles() {
   return parse(useSyncExternalStore(subscribe, snapshot, () => empty));
 }
-
-export function readSavedCircle(id: string) {
-  return parse(snapshot()).find((circle) => circle.id === id);
-}
-
-export function saveCircle(circle: SavedCircle) {
-  localStorage.setItem(key, JSON.stringify([...parse(snapshot()), circle]));
-  window.dispatchEvent(new Event(change));
-}

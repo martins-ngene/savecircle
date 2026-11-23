@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { DashboardDialog, DashboardSearch } from "./controls";
-import { member } from "./model";
+import { DashboardDialog, WalletAccount } from "./controls";
 import { HeaderMenu } from "../landing/header-menu";
 import { Icon } from "../landing/icon";
 
@@ -31,7 +30,7 @@ function Sidebar({ current }: { current: WorkspaceSection }) {
           ))}
         </nav>
         <div className="dash-sidebar-bottom">
-          <div className="dash-testnet-info"><strong><Icon name="shield" /> Stellar Testnet</strong><p>This workspace displays sample balances and payouts.</p></div>
+          <div className="dash-testnet-info"><strong><Icon name="shield" /> Stellar Testnet</strong></div>
           <DashboardDialog className="dash-nav-item" title="Settings" label={<><Icon name="settings" />Settings</>}><p>Settings will be available once the account integration is connected.</p></DashboardDialog>
           <Link className="dash-nav-item" href="/"><Icon name="external" />Back to website</Link>
         </div>
@@ -47,11 +46,10 @@ export function Workspace({ current, children, profile }: { current: WorkspaceSe
       <Sidebar current={current} />
       <div className="dash-workspace" role="region" aria-label="Dashboard content" tabIndex={0}>
         <header className="dash-topbar">
-          <DashboardSearch onOverview={current === "overview"} />
+          <strong>{links.find(([id]) => id === current)?.[1]}</strong>
           <div className="dash-account">
             <span className="dash-tag dash-network"><i />Stellar Testnet</span>
-            <DashboardDialog className="dash-notification" title="Notifications" label={<Icon name="bell" />}><p>Your sample Growth Circle contribution is due in four days.</p></DashboardDialog>
-            {profile ?? <DashboardDialog className="dash-profile" title="Account details" label={<><span className="dash-avatar">{member.initials}</span><span><strong>{member.name}</strong><small>{member.wallet}</small></span><span aria-hidden="true">⌄</span></>}><p>Sample profile for {member.name}. A live wallet connection is required to show your account.</p></DashboardDialog>}
+            {profile ?? <WalletAccount />}
           </div>
         </header>
         <main className="dash-main" id="overview" tabIndex={-1}>

@@ -208,3 +208,18 @@
   .dash-activity td:nth-child(3) { grid-column: 2; text-align: right; font-size: .75rem; }
   .dash-activity td:last-child { grid-column: 2; grid-row: 1; white-space: nowrap; }
 }
+
+.dash-wallet-address { overflow-wrap: anywhere; }
+
+.dashboard .dash-circle-picker {
+  min-height: 38px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid #c7d4ca;
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--green);
+  font-size: .8125rem;
+  font-weight: 700;
+  line-height: 1.3;
+}

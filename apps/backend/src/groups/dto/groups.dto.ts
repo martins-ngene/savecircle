@@ -51,6 +51,17 @@ export class CreateGroupDto {
   @IsNumber()
   @IsOptional()
   onChainGroupId?: number;
+
+  @ApiPropertyOptional({ description: 'Confirmed create_group transaction hash when providing an on-chain group ID' })
+  @IsOptional()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  creationTxHash?: string;
+}
+
+export class LinkOnChainDto {
+  @ApiProperty({ description: 'Confirmed create_group transaction hash' })
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  txHash: string;
 }
 
 export class RegisterMemberDto {

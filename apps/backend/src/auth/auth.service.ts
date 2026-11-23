@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Keypair } from '@stellar/stellar-sdk';
+import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 
@@ -9,22 +9,17 @@ export class AuthService {
   constructor(private readonly prisma: PrismaService) {}
 
   async generateChallenge(walletAddress: string): Promise<{ message: string; expiresAt: number }> {
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+      throw new BadRequestException('Invalid Stellar public address');
+    }
     const nonce = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
     const message = `Sign this message to authenticate with SaveCircle: ${nonce}`;
 
-    try {
-      await this.prisma.walletNonce.create({
-        data: {
-          walletAddress,
-          nonce,
-          expiresAt,
-        },
-      });
-    } catch {
-      // In offline/mock mode
-    }
+    await this.prisma.walletNonce.create({
+      data: { walletAddress, nonce, expiresAt },
+    });
 
     return {
       message,
@@ -33,36 +28,11 @@ export class AuthService {
   }
 
   async verifySignature(walletAddress: string, signature: string, message: string): Promise<{ accessToken: string; walletAddress: string }> {
-    const match = message.match(/SaveCircle: ([a-f0-9]{64})/);
+    const match = /^Sign this message to authenticate with SaveCircle: ([a-f0-9]{64})$/.exec(message);
     if (!match) {
       throw new BadRequestException('Malformed challenge message');
     }
     const nonce = match[1];
-
-    try {
-      const nonceRecord = await this.prisma.walletNonce.findUnique({
-        where: { nonce },
-      });
-
-      if (nonceRecord) {
-        if (nonceRecord.isUsed) {
-          throw new UnauthorizedException('Challenge nonce has already been used');
-        }
-        if (new Date() > nonceRecord.expiresAt) {
-          throw new UnauthorizedException('Challenge nonce has expired');
-        }
-        if (nonceRecord.walletAddress !== walletAddress) {
-          throw new UnauthorizedException('Challenge nonce does not match wallet');
-        }
-
-        await this.prisma.walletNonce.update({
-          where: { id: nonceRecord.id },
-          data: { isUsed: true },
-        });
-      }
-    } catch (e: any) {
-      if (e instanceof UnauthorizedException || e instanceof BadRequestException) throw e;
-    }
 
     // Verify cryptographic signature via Stellar Keypair
     let isValid = false;
@@ -70,7 +40,8 @@ export class AuthService {
       const keypair = Keypair.fromPublicKey(walletAddress);
       const messageBuffer = Buffer.from(message, 'utf-8');
       const signatureBuffer = Buffer.from(signature, 'base64');
-      isValid = keypair.verify(messageBuffer, signatureBuffer);
+      const sep53Digest = crypto.createHash('sha256').update('Stellar Signed Message:\n').update(messageBuffer).digest();
+      isValid = keypair.verify(sep53Digest, signatureBuffer) || keypair.verify(messageBuffer, signatureBuffer);
     } catch {
       isValid = false;
     }
@@ -84,16 +55,21 @@ export class AuthService {
       throw new UnauthorizedException('Cryptographic signature verification failed');
     }
 
-    // Upsert user
-    try {
-      await this.prisma.user.upsert({
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.walletNonce.updateMany({
+        where: { nonce, walletAddress, isUsed: false, expiresAt: { gt: new Date() } },
+        data: { isUsed: true },
+      });
+      if (consumed.count !== 1) {
+        throw new UnauthorizedException('Request a fresh challenge for this wallet');
+      }
+
+      await tx.user.upsert({
         where: { walletAddress },
         update: {},
         create: { walletAddress },
       });
-    } catch {
-      // Ignore if offline
-    }
+    });
 
     const secret = process.env.JWT_SECRET || 'savecircle-super-secret-jwt-key-2026-production';
     const accessToken = jwt.sign(

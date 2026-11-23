@@ -1,11 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGroupDto, RegisterMemberDto, JoinWithInviteDto } from './dto/groups.dto';
 import { Prisma } from '@prisma/client';
+import { BlockchainService } from '../blockchain/blockchain.service';
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly blockchain: BlockchainService) {}
 
   async createGroup(organizerWallet: string, dto: CreateGroupDto) {
     const contributionPerMember = new Prisma.Decimal(dto.contributionAmount);
@@ -13,13 +14,24 @@ export class GroupsService {
     const frequency = dto.paymentFrequency || 'MONTHLY';
     const durationDays = dto.cycleDurationDays || 30;
     const approvalThreshold = dto.approvalThreshold || Math.min(3, dto.totalMembers);
+    const usdcToken = this.blockchain.getNetworkConfig().usdcTokenId;
+    if (dto.onChainGroupId != null || dto.creationTxHash != null) {
+      if (!dto.creationTxHash || dto.onChainGroupId == null) {
+        throw new BadRequestException('Provide both onChainGroupId and creationTxHash, or link the circle after creation');
+      }
+      const verifiedId = await this.blockchain.verifyGroupCreation(dto.creationTxHash, {
+        organizerWallet, usdcToken, name: dto.name, contributionAmount: contributionPerMember,
+        totalMembers: dto.totalMembers, approvalThreshold,
+      });
+      if (verifiedId !== dto.onChainGroupId) throw new BadRequestException('The on-chain group ID differs from the transaction result');
+    }
 
     const group = await this.prisma.savingsGroup.create({
       data: {
         name: dto.name,
         description: dto.description,
         organizerWallet,
-        usdcToken: process.env.USDC_TOKEN_CONTRACT_ID || 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+        usdcToken,
         contributionAmount: contributionPerMember,
         targetAmount,
         totalMembers: dto.totalMembers,
@@ -88,6 +100,28 @@ export class GroupsService {
     return group;
   }
 
+  async linkOnChain(id: string, organizerWallet: string, hash: string) {
+    const group = await this.getGroupById(id);
+    if (group.organizerWallet !== organizerWallet) throw new ForbiddenException('Only the organizer can link a circle');
+    if (group.onChainGroupId != null) return group;
+    if (group.payoutModel !== 'ROTATING') throw new BadRequestException('Only rotating circles support this contract');
+    const onChainGroupId = await this.blockchain.verifyGroupCreation(hash, group);
+    try {
+      await this.prisma.savingsGroup.updateMany({
+        where: { id, organizerWallet, onChainGroupId: null },
+        data: { onChainGroupId },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('This Stellar group is already linked to another circle');
+      }
+      throw error;
+    }
+    const linked = await this.getGroupById(id);
+    if (linked.onChainGroupId !== onChainGroupId) throw new ConflictException('This circle was linked to a different Stellar group');
+    return linked;
+  }
+
   async getGroupByInviteToken(inviteToken: string) {
     const group = await this.prisma.savingsGroup.findUnique({
       where: { inviteToken },
@@ -153,29 +187,11 @@ export class GroupsService {
       throw new BadRequestException(`Rotation position ${dto.rotationPosition} is already taken`);
     }
 
-    const member = await this.prisma.groupMember.create({
-      data: {
-        groupId,
-        walletAddress: dto.walletAddress,
-        displayName: dto.displayName,
-        rotationPosition: dto.rotationPosition,
-        status: 'INVITED',
-        rulesAccepted: false,
-      },
-    });
+    if (!Number.isInteger(dto.rotationPosition) || dto.rotationPosition < 1 || dto.rotationPosition > group.totalMembers) {
+      throw new BadRequestException('Choose a valid rotation position');
+    }
 
-    // Update corresponding cycle recipient
-    await this.prisma.contributionCycle.updateMany({
-      where: {
-        groupId,
-        cycleIndex: dto.rotationPosition,
-      },
-      data: {
-        recipientWallet: dto.walletAddress,
-      },
-    });
-
-    return member;
+    return this.reserveMember(groupId, dto.walletAddress, dto.rotationPosition, dto.displayName, false);
   }
 
   async joinWithInvite(walletAddress: string, dto: JoinWithInviteDto) {
@@ -183,48 +199,44 @@ export class GroupsService {
       where: { inviteToken: dto.inviteToken },
       include: { members: true },
     });
+    if (!group) throw new NotFoundException('Invalid invitation link');
 
-    if (!group) {
-      throw new NotFoundException('Invalid invitation link');
+    const alreadyMember = group.members.find((member) => member.walletAddress === walletAddress);
+    if (alreadyMember) return alreadyMember;
+    if (group.members.length >= group.totalMembers) throw new BadRequestException('Group is full');
+    if (!Number.isInteger(dto.rotationPosition) || dto.rotationPosition < 1 || dto.rotationPosition > group.totalMembers) {
+      throw new BadRequestException('Choose a valid rotation position');
+    }
+    if (group.members.some((member) => member.rotationPosition === dto.rotationPosition)) {
+      throw new ConflictException('This payout spot is occupied. Reopen the invitation to see available spots.');
     }
 
-    if (group.members.length >= group.totalMembers) {
-      throw new BadRequestException('Group is full');
+    return this.reserveMember(group.id, walletAddress, dto.rotationPosition, dto.displayName || 'Member', true);
+  }
+
+  private async reserveMember(groupId: string, walletAddress: string, rotationPosition: number, displayName: string | undefined, accepted: boolean) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.user.upsert({ where: { walletAddress }, update: {}, create: { walletAddress } });
+        const member = await tx.groupMember.create({
+          data: {
+            groupId, walletAddress, displayName, rotationPosition,
+            status: accepted ? 'ACTIVE' : 'INVITED',
+            rulesAccepted: accepted,
+          },
+        });
+        await tx.contributionCycle.updateMany({
+          where: { groupId, cycleIndex: rotationPosition },
+          data: { recipientWallet: walletAddress },
+        });
+        return member;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('This wallet or payout spot already has a reservation. Refresh the circle and try again.');
+      }
+      throw error;
     }
-
-    const alreadyMember = group.members.find((m) => m.walletAddress === walletAddress);
-    if (alreadyMember) {
-      return alreadyMember;
-    }
-
-    const positionTaken = group.members.find((m) => m.rotationPosition === dto.rotationPosition);
-    if (positionTaken) {
-      throw new BadRequestException(`Rotation position ${dto.rotationPosition} is already occupied`);
-    }
-
-    const member = await this.prisma.groupMember.create({
-      data: {
-        groupId: group.id,
-        walletAddress,
-        displayName: dto.displayName || 'Member',
-        rotationPosition: dto.rotationPosition,
-        status: 'ACTIVE',
-        rulesAccepted: true,
-      },
-    });
-
-    // Update cycle
-    await this.prisma.contributionCycle.updateMany({
-      where: {
-        groupId: group.id,
-        cycleIndex: dto.rotationPosition,
-      },
-      data: {
-        recipientWallet: walletAddress,
-      },
-    });
-
-    return member;
   }
 
   async acceptRules(groupId: string, memberWallet: string) {
@@ -237,9 +249,11 @@ export class GroupsService {
       },
     });
 
-    if (!member) {
-      throw new NotFoundException('Member record not found in this circle');
+    if (!member) throw new NotFoundException('Member record not found in this circle');
+    if (member.status !== 'INVITED' && member.status !== 'ACTIVE') {
+      throw new ForbiddenException('This membership cannot accept rules');
     }
+    if (member.rulesAccepted && member.status === 'ACTIVE') return member;
 
     return this.prisma.groupMember.update({
       where: { id: member.id },

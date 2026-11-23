@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { GroupsService } from './groups.service';
-import { CreateGroupDto, RegisterMemberDto, JoinWithInviteDto, AcceptRulesDto } from './dto/groups.dto';
+import { CreateGroupDto, RegisterMemberDto, JoinWithInviteDto, LinkOnChainDto } from './dto/groups.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator';
 
@@ -45,6 +45,15 @@ export class GroupsController {
   @ApiOperation({ summary: 'Get full savings circle details by ID' })
   async getGroupById(@Param('id') id: string) {
     return this.groupsService.getGroupById(id);
+  }
+
+  @Post(':id/link-on-chain')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Link an organizer’s confirmed Stellar Testnet group creation' })
+  async linkOnChain(@Param('id') id: string, @CurrentUser() user: AuthUser, @Body() dto: LinkOnChainDto) {
+    return this.groupsService.linkOnChain(id, user.walletAddress, dto.txHash);
   }
 
   @Post(':id/members')

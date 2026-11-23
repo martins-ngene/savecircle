@@ -45,6 +45,12 @@
 - [x] Export TypeScript shared types and DTOs (`packages/shared`)
 - [x] Author `HANDSHAKE.md` detailing API endpoints, payloads, and contract invocation flows
 - [x] Document client-side transaction signing workflows for the Frontend team
+- [x] Connect Freighter sign-in and invitation acceptance to the local API
+- [x] Show the signed-in member’s circles, payout spots, and contribution obligations on the dashboard overview
+- [x] Create rotating circles through the API, share server-generated invitations, and show API-backed circle details
+- [x] Complete Handshake §3.2 in My Circles with the group detail endpoint and rule acceptance for invited members
+- [x] Replace Schedule and My Ledger previews with authenticated circle selection and the read endpoints in Handshake §§3.3–3.4
+- [x] Connect Stellar configuration and transaction status, verified circle linking, and wallet-signed contribution, payout, withdrawal, and membership actions
 
 ## Phase 5: Technical Report, CI/CD Pipeline & Deployment
 - [x] Configure `render.yaml` Blueprint for backend and PostgreSQL hosting on Render
@@ -53,4 +59,21 @@
 - [x] Generate `TECHNICAL_REPORT.md` with testnet transaction hashes, explorer links, and test matrix
 - [x] Document local containerization in `LOCAL_DOCKER.md`
 - [x] Finalize `README.md` with developer setup and architecture documentation
-- [x] Verify 100% completion against the PRD requirements
+- [ ] Re-verify end-to-end PRD coverage after the funded Testnet run and resolve or explicitly defer the open items below.
+
+## Backend handoff for circle creation and invitations
+
+- [x] Link API circles through organizer-authorized `POST /api/groups/:id/link-on-chain`. The API verifies the confirmed creation transaction and the frontend guides organizer registration and member acceptance.
+- [ ] Define and persist custom first contribution dates, grace periods, fixed payout amounts and recipients, and custom rotation order if these options are planned. The current API generates cycles relative to creation, assigns the organizer to position 1, and supports the rotating workflow used by the frontend.
+- [ ] Make circle creation retry-safe. Document an idempotency key for `POST /api/groups` and create the circle, organizer membership, and cycles atomically so a timeout or partial failure cannot create duplicate or incomplete circles.
+- [x] Reserve membership and the cycle recipient in one transaction. A concurrent claim returns HTTP 409 so the frontend can reload available positions.
+- [ ] Add persistent rule and schedule amendments. The current API and contract expose no proposal or execution workflow for these changes.
+- [ ] Add one-time exit/refund protection to the contract, deploy the corrected contract, and reconcile exit/refund events before exposing this action in Group Management.
+- [ ] Backfill events when a saved cursor falls outside RPC retention and reconcile any existing cached totals before a wider rollout.
+
+## Testnet verification and rollout
+
+- [ ] Complete a funded Freighter browser run with separate organizer and member wallets. Register and link a circle, register both members and accept the rules, fully fund a cycle, release its payout, and request, approve, and execute a withdrawal against available funds. Check that Schedule, My Ledger, and Group Management show the expected records after confirmation and refresh.
+- [ ] Recover stalled transaction attempts when RPC keeps returning `NOT_FOUND`. Persist the transaction validity window with its hash and allow a fresh signature only after checking that the previous transaction expired without landing.
+- [ ] Deploy the updated backend and frontend together, then repeat the sign-in, invitation, and read-only checks against the hosted API. The new frontend uses the verified circle-linking route and expects the backend to index the resulting transactions.
+- [ ] Document organizer-only `POST /api/groups/:id/members` in the handshake, including the reservation payload and how it relates to the organizer’s on-chain registration.

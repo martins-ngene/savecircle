@@ -28,7 +28,7 @@
 .ledger-totals > div { padding: clamp(12px, 1.45vw, 19px); }
 .ledger-totals dt { font-size: .8125rem; }
 .ledger-totals dd:nth-child(2) { margin-block: 10px; font-size: clamp(1.1rem, 2.15vw, 1.55rem); letter-spacing: -.03em; font-weight: 650; }
-.ledger-totals dd:last-child { color: var(--ledger-muted); font-size: .7rem; }
+.ledger-totals dd:nth-of-type(2) { color: var(--ledger-muted); font-size: .7rem; }
 .ledger-button {
   display: inline-flex;
   align-items: center;
@@ -47,6 +47,7 @@
   text-align: center;
 }
 .ledger-button:hover { filter: brightness(.97); }
+.ledger-toolbar > .ledger-button { min-height: 38px; padding: 5px 11px; font-size: .8125rem; }
 .ledger-button[data-tone="primary"], .ledger-primary { color: white; background: var(--ledger-green); }
 .ledger-button[data-tone="lime"], .ledger-lime { background: var(--ledger-lime); border-color: transparent; }
 .ledger-button[data-tone="soft"], .ledger-soft, .ledger-note { background: var(--ledger-soft); border-color: transparent; }
@@ -85,8 +86,8 @@
 .ledger-section-header { flex-wrap: wrap; }
 .ledger-section-header p { margin-top: 8px; }
 .ledger-cycle-count {
-  padding: 11px; border-radius: 10px; background: var(--ledger-soft);
-  font-weight: 750;
+  padding: 4px 8px; border-radius: 8px; background: var(--ledger-soft);
+  font-size: .75rem; font-weight: 750;
 }
 .ledger-table { width: 100%; border-collapse: collapse; margin-top: 12px; text-align: left; }
 .ledger-table th, .ledger-table td { padding: 12px 7px; }

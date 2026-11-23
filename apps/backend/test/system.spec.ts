@@ -1,11 +1,13 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { MockPrismaStore } from './mock-prisma';
-import { Keypair } from '@stellar/stellar-sdk';
+import { Account, Contract, Keypair, nativeToScVal, rpc, TransactionBuilder } from '@stellar/stellar-sdk';
+import { createHash } from 'node:crypto';
+import { BlockchainService } from '../src/blockchain/blockchain.service';
 
 describe('SaveCircle End-to-End System & Regression Tests', () => {
   let app: INestApplication;
@@ -94,13 +96,14 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
       organizerToken = verifyRes.body.accessToken;
     });
 
-    it('should authenticate member with valid cryptographic signature', async () => {
+    it('should authenticate a member with a Freighter-compatible SEP-53 signature', async () => {
       const chalRes = await request(app.getHttpServer())
         .post('/api/auth/challenge')
         .send({ walletAddress: memberWallet });
 
       const message = chalRes.body.message;
-      const signature = memberKeypair.sign(Buffer.from(message, 'utf-8')).toString('base64');
+      const digest = createHash('sha256').update('Stellar Signed Message:\n').update(message).digest();
+      const signature = memberKeypair.sign(digest).toString('base64');
 
       const verifyRes = await request(app.getHttpServer())
         .post('/api/auth/verify')
@@ -183,7 +186,6 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
           approvalThreshold: 3,
           payoutModel: 'ROTATING',
           rules: '1. Pay on 1st. 2. Payouts in rotation.',
-          onChainGroupId: 1,
         })
         .expect(201);
 
@@ -196,6 +198,40 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
 
       createdGroupId = res.body.id;
       inviteToken = res.body.inviteToken;
+    });
+
+    it('links only a confirmed matching create_group transaction submitted by the circle organizer', async () => {
+      const config = app.get(BlockchainService).getNetworkConfig();
+      const args = [
+        nativeToScVal(organizerWallet, { type: 'address' }),
+        nativeToScVal('Lagos Tech Savings Circle', { type: 'string' }),
+        nativeToScVal(config.usdcTokenId, { type: 'address' }),
+        nativeToScVal(1_000_000_000n, { type: 'i128' }),
+        nativeToScVal(5, { type: 'u32' }),
+        nativeToScVal(30 * 17_280, { type: 'u32' }),
+        nativeToScVal(3, { type: 'u32' }),
+      ];
+      const envelope = (name: string) => new TransactionBuilder(new Account(organizerWallet, '0'), {
+        fee: '100', networkPassphrase: config.networkPassphrase,
+      }).addOperation(new Contract(config.contractId).call(name, ...args)).setTimeout(60).build().toEnvelope();
+      const response = {
+        status: rpc.Api.GetTransactionStatus.SUCCESS,
+        feeBump: false,
+        returnValue: nativeToScVal(7, { type: 'u32' }),
+        envelopeXdr: envelope('contribute'),
+      };
+      const lookup = vi.spyOn(rpc.Server.prototype, 'getTransaction').mockResolvedValue(response as rpc.Api.GetSuccessfulTransactionResponse);
+      const path = `/api/groups/${createdGroupId}/link-on-chain`;
+      const proof = { txHash: 'a'.repeat(64) };
+      try {
+        await request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${memberToken}`).send(proof).expect(403);
+        await request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${organizerToken}`).send(proof).expect(400);
+        response.envelopeXdr = envelope('create_group');
+        const linked = await request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${organizerToken}`).send(proof).expect(200);
+        expect(linked.body.onChainGroupId).toBe(7);
+      } finally {
+        lookup.mockRestore();
+      }
     });
 
     it('should retrieve circles for the authenticated organizer', async () => {

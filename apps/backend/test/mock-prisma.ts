@@ -27,6 +27,7 @@ export class MockPrismaStore {
     return {
       $connect: async () => {},
       $disconnect: async () => {},
+      $transaction: async (run: (tx: any) => Promise<unknown>) => run(this.getService()),
       user: {
         upsert: async ({ where, create, update }: any) => {
           let u = this.users.find((x) => x.walletAddress === where.walletAddress);
@@ -48,16 +49,14 @@ export class MockPrismaStore {
           this.nonces.push(rec);
           return rec;
         },
-        findUnique: async ({ where }: any) => {
-          return this.nonces.find((x) => x.nonce === where.nonce) || null;
-        },
-        update: async ({ where, data }: any) => {
-          const idx = this.nonces.findIndex((x) => x.id === where.id || x.nonce === where.nonce);
-          if (idx !== -1) {
-            Object.assign(this.nonces[idx], data);
-            return this.nonces[idx];
-          }
-          return null;
+        updateMany: async ({ where, data }: any) => {
+          const record = this.nonces.find((nonce) =>
+            nonce.nonce === where.nonce && nonce.walletAddress === where.walletAddress &&
+            nonce.isUsed === where.isUsed && nonce.expiresAt > where.expiresAt.gt,
+          );
+          if (!record) return { count: 0 };
+          Object.assign(record, data);
+          return { count: 1 };
         },
       },
       savingsGroup: {
@@ -89,9 +88,14 @@ export class MockPrismaStore {
           return this.getGroupView(grp.id, include);
         },
         findUnique: async ({ where, include }: any) => {
-          const grp = this.groups.find((x) => x.id === where.id || x.inviteToken === where.inviteToken || x.onChainGroupId === where.onChainGroupId);
+          const grp = this.groups.find((group) => Object.entries(where).every(([key, value]) => group[key] === value));
           if (!grp) return null;
           return this.getGroupView(grp.id, include);
+        },
+        updateMany: async ({ where, data }: any) => {
+          const groups = this.groups.filter((group) => Object.entries(where).every(([key, value]) => (group[key] ?? null) === value));
+          groups.forEach((group) => Object.assign(group, data));
+          return { count: groups.length };
         },
         findMany: async ({ where }: any) => {
           return this.groups

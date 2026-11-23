@@ -1,8 +1,21 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
+import Link from "next/link";
+import { setWalletSession, useWalletSession } from "@/lib/wallet-session";
+import { shortWallet } from "../invitations/model";
 import { Icon } from "../landing/icon";
 import { useDashboardSearch } from "./use-dashboard-search";
+
+export function WalletAccount() {
+  const session = useWalletSession();
+  if (session === undefined) return null;
+  if (!session) return <Link className="button outline" href="/connect">Connect wallet</Link>;
+  return <DashboardDialog className="dash-profile" title="Account details" label={<><span className="dash-avatar"><Icon name="wallet" /></span><span><strong>Wallet account</strong><small>{shortWallet(session.walletAddress)}</small></span></>}>
+    <p className="dash-wallet-address">{session.walletAddress}</p>
+    <Link className="button outline" href="/connect" onClick={() => setWalletSession(null)}>Change wallet</Link>
+  </DashboardDialog>;
+}
 
 export function DashboardSearch({ onOverview = true }: { onOverview?: boolean }) {
   const { query, setQuery, results } = useDashboardSearch();

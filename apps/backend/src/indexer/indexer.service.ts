@@ -1,7 +1,9 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { rpc, xdr, scValToNative } from '@stellar/stellar-sdk';
-import { Prisma } from '@prisma/client';
+import { nativeToScVal, rpc, scValToNative, xdr } from '@stellar/stellar-sdk';
+import { Prisma, WithdrawalStatus } from '@prisma/client';
+
+const withdrawalStatuses = [undefined, WithdrawalStatus.PENDING, WithdrawalStatus.APPROVED, WithdrawalStatus.EXECUTED, WithdrawalStatus.REJECTED];
 
 @Injectable()
 export class IndexerService implements OnModuleInit, OnModuleDestroy {
@@ -48,158 +50,124 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async syncEvents() {
-    // Read last synced ledger from database
-    let lastLedger = 0;
-    try {
-      const syncState = await this.prisma.syncState.findUnique({
+    const syncState = await this.prisma.syncState.findUnique({ where: { id: 'savecircle-events' } });
+    const cursor = syncState?.lastCursor;
+    let startLedger = Number(syncState?.lastLedger ?? 0);
+    if (!cursor && !startLedger) {
+      const { sequence } = await this.server.getLatestLedger();
+      startLedger = Math.max(1, sequence - 100);
+    }
+
+    const response = await this.server.getEvents({
+      ...(cursor ? { cursor } : { startLedger }),
+      filters: [{ type: 'contract', contractIds: [this.contractId] }],
+      limit: 50,
+    });
+
+    if (!response.events.length && response.latestLedger > startLedger) {
+      await this.prisma.syncState.upsert({
         where: { id: 'savecircle-events' },
+        update: { lastLedger: BigInt(response.latestLedger), lastCursor: null },
+        create: { id: 'savecircle-events', lastLedger: BigInt(response.latestLedger) },
       });
-      if (syncState) {
-        lastLedger = Number(syncState.lastLedger);
-      }
-    } catch {
       return;
     }
 
-    if (lastLedger === 0) {
-      try {
-        const latest = await this.server.getLatestLedger();
-        lastLedger = Math.max(1, latest.sequence - 100);
-      } catch {
-        return;
-      }
-    }
-
-    try {
-      const response = await this.server.getEvents({
-        startLedger: lastLedger,
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [this.contractId],
-          },
-        ],
-        limit: 50,
-      });
-
-      if (!response.events || response.events.length === 0) {
-        return;
-      }
-
-      for (const event of response.events) {
-        await this.processEvent(event);
-      }
-
-      const newestLedger = response.events[response.events.length - 1].ledger;
+    for (const event of response.events) {
+      await this.processEvent(event);
       await this.prisma.syncState.upsert({
         where: { id: 'savecircle-events' },
-        update: { lastLedger: BigInt(newestLedger + 1) },
-        create: { id: 'savecircle-events', lastLedger: BigInt(newestLedger + 1) },
+        update: { lastLedger: BigInt(event.ledger), lastCursor: event.id },
+        create: { id: 'savecircle-events', lastLedger: BigInt(event.ledger), lastCursor: event.id },
       });
-    } catch (err: any) {
-      this.logger.debug(`getEvents polling: ${err.message}`);
     }
   }
 
-  private async processEvent(event: any) {
-    try {
-      const topicVals = event.topic.map((t) => scValToNative(xdr.ScVal.fromXDR(t, 'base64')));
-      const eventName = topicVals[0];
-
-      if (eventName === 'contrib') {
-        const onChainGroupId = topicVals[1];
-        const cycleIndex = topicVals[2];
-        const value = scValToNative(xdr.ScVal.fromXDR(event.value, 'base64'));
-        const memberWallet = value[0];
-        const amount = Number(value[1]) / 10_000_000;
-
-        this.logger.log(`Indexed contribution: Group ${onChainGroupId}, Cycle ${cycleIndex}, Member ${memberWallet}, Amount ${amount}`);
-
-        const group = await this.prisma.savingsGroup.findUnique({
-          where: { onChainGroupId },
-        });
-
-        if (group) {
-          const cycle = await this.prisma.contributionCycle.findUnique({
-            where: {
-              groupId_cycleIndex: {
-                groupId: group.id,
-                cycleIndex,
-              },
-            },
-          });
-
-          if (cycle) {
-            await this.prisma.paymentRecord.upsert({
-              where: { txHash: event.txHash },
-              update: {},
-              create: {
-                groupId: group.id,
-                cycleId: cycle.id,
-                memberWallet,
-                amount: new Prisma.Decimal(amount),
-                txHash: event.txHash,
-                onChainLedger: BigInt(event.ledger),
-              },
-            });
-
-            await this.prisma.contributionCycle.update({
-              where: { id: cycle.id },
-              data: {
-                collectedAmount: { increment: new Prisma.Decimal(amount) },
-              },
-            });
-
-            await this.prisma.groupMember.updateMany({
-              where: {
-                groupId: group.id,
-                walletAddress: memberWallet,
-              },
-              data: {
-                totalContributed: { increment: new Prisma.Decimal(amount) },
-              },
-            });
-          }
-        }
-      } else if (eventName === 'payout') {
-        const onChainGroupId = topicVals[1];
-        const cycleIndex = topicVals[2];
-        const value = scValToNative(xdr.ScVal.fromXDR(event.value, 'base64'));
-        const recipient = value[0];
-        const amount = Number(value[1]) / 10_000_000;
-
-        this.logger.log(`Indexed rotating payout: Group ${onChainGroupId}, Cycle ${cycleIndex}, Recipient ${recipient}, Amount ${amount}`);
-
-        const group = await this.prisma.savingsGroup.findUnique({
-          where: { onChainGroupId },
-        });
-
-        if (group) {
-          await this.prisma.contributionCycle.updateMany({
-            where: {
-              groupId: group.id,
-              cycleIndex,
-            },
-            data: {
-              status: 'PAID',
-              paidAt: new Date(),
-              payoutTxHash: event.txHash,
-            },
-          });
-
-          await this.prisma.groupMember.updateMany({
-            where: {
-              groupId: group.id,
-              walletAddress: recipient,
-            },
-            data: {
-              totalReceived: { increment: new Prisma.Decimal(amount) },
-            },
-          });
-        }
-      }
-    } catch (err: any) {
-      this.logger.debug(`Error processing event: ${err.message}`);
+  private async processEvent(event: rpc.Api.EventResponse) {
+    const [name, onChainGroupId, cycleIndex] = event.topic.map((topic) => scValToNative(topic));
+    if (name === 'wdr_req' || name === 'wdr_app' || name === 'wdr_exec') {
+      await this.indexWithdrawal(event, onChainGroupId, cycleIndex, name);
+      return;
     }
+    if (name !== 'contrib' && name !== 'payout') return;
+
+    const [walletAddress, rawAmount] = scValToNative(event.value);
+    const amount = new Prisma.Decimal(String(rawAmount)).div(10_000_000);
+    const group = await this.prisma.savingsGroup.findUnique({ where: { onChainGroupId } });
+    if (!group) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const key = { groupId: group.id, cycleIndex };
+      if (name === 'payout') {
+        const updated = await tx.contributionCycle.updateMany({
+          where: { ...key, payoutTxHash: null },
+          data: { status: 'PAID', paidAt: new Date(event.ledgerClosedAt), payoutTxHash: event.txHash },
+        });
+        if (updated.count) await tx.groupMember.updateMany({
+          where: { groupId: group.id, walletAddress },
+          data: { totalReceived: { increment: amount } },
+        });
+        return;
+      }
+
+      const cycle = await tx.contributionCycle.findUnique({ where: { groupId_cycleIndex: key } });
+      if (!cycle) return;
+      const inserted = await tx.paymentRecord.createMany({
+        data: {
+          groupId: group.id,
+          cycleId: cycle.id,
+          memberWallet: walletAddress,
+          amount,
+          txHash: event.txHash,
+          onChainLedger: BigInt(event.ledger),
+          createdAt: new Date(event.ledgerClosedAt),
+        },
+        skipDuplicates: true,
+      });
+      if (!inserted.count) return;
+
+      const updated = await tx.contributionCycle.update({
+        where: { id: cycle.id },
+        data: { collectedAmount: { increment: amount } },
+      });
+      if (updated.status !== 'PAID') await tx.contributionCycle.update({
+        where: { id: cycle.id },
+        data: { status: updated.collectedAmount.gte(updated.targetAmount) ? 'FUNDED' : 'PENDING' },
+      });
+      await tx.groupMember.updateMany({
+        where: { groupId: group.id, walletAddress },
+        data: { totalContributed: { increment: amount } },
+      });
+    });
+  }
+
+  private async indexWithdrawal(event: rpc.Api.EventResponse, onChainGroupId: number, requestId: number, name: string) {
+    const group = await this.prisma.savingsGroup.findUnique({ where: { onChainGroupId } });
+    if (!group) return;
+
+    const key = xdr.ScVal.scvVec([
+      nativeToScVal('Withdrawal', { type: 'symbol' }),
+      nativeToScVal(onChainGroupId, { type: 'u32' }),
+      nativeToScVal(requestId, { type: 'u32' }),
+    ]);
+    const entry = await this.server.getContractData(this.contractId, key);
+    const record = scValToNative(entry.val.contractData().val());
+    const status = withdrawalStatuses[record.status];
+    if (!status) throw new Error('Unknown withdrawal status from Stellar');
+    const executed = name === 'wdr_exec' ? { executedAt: new Date(event.ledgerClosedAt), txHash: event.txHash } : {};
+    const fields = {
+      requesterWallet: record.requester,
+      recipientWallet: record.recipient,
+      amount: new Prisma.Decimal(String(record.amount)).div(10_000_000),
+      approvalCount: record.approval_count,
+      requiredApprovals: group.approvalThreshold,
+      status,
+      ...executed,
+    };
+    await this.prisma.withdrawalProposal.upsert({
+      where: { groupId_requestId: { groupId: group.id, requestId } },
+      update: fields,
+      create: { groupId: group.id, requestId, ...fields, createdAt: new Date(event.ledgerClosedAt) },
+    });
   }
 }

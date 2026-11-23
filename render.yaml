@@ -2,8 +2,8 @@ databases:
   - name: savecircle-db
     databaseName: savecircle
     user: savecircle_user
-    plan: basic-256mb
-    diskSizeGB: 1
+    plan: 0.1c-256mb
+    diskSizeGB: 15
     postgresMajorVersion: "16"
 
 services:

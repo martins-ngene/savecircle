@@ -31,7 +31,7 @@ docker compose --env-file /dev/null up --build
 Once running:
 - **API Health / Config**: [http://localhost:4000/api/blockchain/config](http://localhost:4000/api/blockchain/config)
 - **Interactive Swagger Documentation**: [http://localhost:4000/docs](http://localhost:4000/docs)
-- **PostgreSQL Database**: Accessible on host port `5433` (Username: `postgres`, Password: `postgres`, DB: `savecircle`). Set `SAVECIRCLE_POSTGRES_PORT` in your shell to use a different host port.
+- **PostgreSQL Database**: Accessible on host port `5434` (Username: `postgres`, Password: `postgres`, DB: `savecircle`). Set `SAVECIRCLE_POSTGRES_PORT` in your shell to use a different host port.
 
 From the repository root, run `npm ci` and then `npm run frontend:dev` to start
 the `apps/frontend` workspace on port 3000.

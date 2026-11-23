@@ -48,7 +48,7 @@
 
 ## Phase 5: Technical Report, CI/CD Pipeline & Deployment
 - [x] Configure `render.yaml` Blueprint for backend and PostgreSQL hosting on Render
-- [x] Provision dedicated persistent PostgreSQL database (`savecircle-db`) on `0.5c-1g` tier
+- [x] Provision dedicated persistent PostgreSQL database (`savecircle-db`) on `basic-256mb` (0.1 CPU, 1 GB disk) tier
 - [x] Create GitHub Actions CI/CD pipeline (`.github/workflows/ci.yml`) for pre-flight testing and container verification
 - [x] Generate `TECHNICAL_REPORT.md` with testnet transaction hashes, explorer links, and test matrix
 - [x] Document local containerization in `LOCAL_DOCKER.md`

@@ -12,9 +12,8 @@ services:
     runtime: node
     plan: free
     region: oregon
-    rootDir: apps/backend
-    buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: node scripts/start-production.js
+    buildCommand: npm ci --include=dev --workspace apps/backend --workspace packages/shared && npm run build --workspace packages/shared && npm run prisma:generate --workspace apps/backend && npm run backend:build
+    startCommand: npm run start:render --workspace apps/backend
     healthCheckPath: /health
     autoDeploy: true
     envVars:

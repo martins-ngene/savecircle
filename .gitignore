@@ -27,6 +27,9 @@ Cargo.lock
 dist/
 build/
 *.wasm
+.next/
+next-env.d.ts
+*.tsbuildinfo
 
 # Logs & temp
 *.log

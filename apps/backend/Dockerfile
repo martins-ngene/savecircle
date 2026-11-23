@@ -7,9 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/backend/package.json ./apps/backend/
+COPY apps/frontend/package.json ./apps/frontend/
 
-# Install dependencies across all workspaces
-RUN npm ci
+# Install dependencies for the backend and shared types
+RUN npm ci --workspace apps/backend --workspace packages/shared
 
 # Copy and compile shared package
 COPY packages/shared ./packages/shared

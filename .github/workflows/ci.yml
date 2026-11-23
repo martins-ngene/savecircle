@@ -48,7 +48,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --workspace apps/backend --workspace packages/shared
 
       - name: Build Shared Types Package
         run: npm --prefix packages/shared run build
@@ -73,6 +73,19 @@ jobs:
 
       - name: Run End-to-End System & Regression Tests
         run: npm --prefix apps/backend test
+
+  frontend:
+    name: Frontend Build & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --workspace apps/frontend
+      - run: npm run frontend:test
+      - run: npm run frontend:build
 
   docker-build-check:
     name: Docker Container Validation

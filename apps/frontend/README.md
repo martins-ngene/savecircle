@@ -1,12 +1,14 @@
 # SaveCircle frontend
 
-A Next.js landing page for SaveCircle’s Stellar Testnet savings circles. It uses the supplied photography, Manrope, and DM Serif Display Italic.
+A Next.js frontend for SaveCircle’s Stellar Testnet savings circles.
 
 ## Run locally
 
+From the repository root:
+
 ```sh
 npm ci
-npm run dev
+npm run frontend:dev
 ```
 
 Open http://localhost:3000.
@@ -14,9 +16,9 @@ Open http://localhost:3000.
 ## Verify
 
 ```sh
-npm run lint
-npm run build
-node --test features/landing/plan.test.mjs
+npm run frontend:lint
+npm run frontend:build
+npm run frontend:test
 ```
 
 The planner tests use Node.js 22.18 or newer.
@@ -27,4 +29,4 @@ The planner tests use Node.js 22.18 or newer.
 - **View model** — `features/landing/use-planner.ts` manages planner inputs, derived totals, and clipboard feedback.
 - **View** — `app/page.tsx` renders the landing page. `features/landing/planner.tsx` binds the controls and results to the view model.
 
-The planner and member ledger use illustrative data. The wallet button describes the app connection flow, which requires a future integration.
+The landing-page planner uses illustrative inputs. Dashboard screens use the SaveCircle API and the connected Freighter wallet. See [the local Docker guide](../../LOCAL_DOCKER.md) for backend setup.

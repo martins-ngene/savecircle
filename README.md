@@ -10,9 +10,9 @@ SaveCircle digitizes traditional group savings (*Ajo*, *Esusu*, *Adashi*) by com
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Frontend Web App (External / Frontend Team)"]
+    subgraph Client ["Frontend Web App (apps/frontend)"]
         UI["Next.js Responsive UI & Planner"]
-        SWK["Stellar Wallets Kit (Freighter, Albedo, xBull)"]
+        SWK["Freighter wallet"]
     end
 
     subgraph Backend ["Backend & Database (apps/backend)"]
@@ -94,7 +94,7 @@ savecircle/
 ## 4. Developer Quickstart
 
 ### Prerequisites
-- Node.js v20+ / npm v10+
+- Node.js 22.18+ / npm v10+
 - Rust & Cargo (1.98+)
 - `stellar` CLI (28.1+)
 
@@ -110,7 +110,7 @@ npm run contract:build
 ### 2. Backend API: Setup & Run
 ```bash
 # Install workspace dependencies
-npm install
+npm ci
 
 # Build shared types package
 npm --prefix packages/shared run build
@@ -125,6 +125,13 @@ npm run backend:dev
 npm --prefix apps/backend run test:smoke
 ```
 
+### 3. Frontend
+
+Run `npm run frontend:dev` from the repository root and open
+`http://localhost:3000`. The frontend workspace lives in `apps/frontend`
+and uses the root lockfile. Run `npm run frontend:test` and
+`npm run frontend:build` to verify it.
+
 ---
 
 ## 5. Deployment on Render
@@ -134,7 +141,7 @@ This repository includes a production-ready `render.yaml` Blueprint:
 2. Click **New +** $\rightarrow$ **Blueprint**.
 3. Select this repository; Render will automatically provision:
    - **Render Managed PostgreSQL 16** (`savecircle-db`)
-   - **Node.js Web Service** (`savecircle-backend`) running `npx prisma db push --accept-data-loss && node dist/main` with automatic health checks at `/api/blockchain/config`.
+   - **Node.js Web Service** (`savecircle-backend`) built from the workspace root and started through the backend’s production runner, with health checks at `/health`.
 
 ---
 

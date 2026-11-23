@@ -33,12 +33,13 @@ Once running:
 - **Interactive Swagger Documentation**: [http://localhost:4000/docs](http://localhost:4000/docs)
 - **PostgreSQL Database**: Accessible on host port `5433` (Username: `postgres`, Password: `postgres`, DB: `savecircle`). Set `SAVECIRCLE_POSTGRES_PORT` in your shell to use a different host port.
 
-Run `npm run dev` from `savecircle-frontend` to start the frontend on port 3000.
+From the repository root, run `npm ci` and then `npm run frontend:dev` to start
+the `apps/frontend` workspace on port 3000.
 Frontend API integrations use `apiBaseUrl` from `lib/api.ts`. It defaults to
 `http://localhost:4000/api` in development and
 `https://savecircle-backend.onrender.com/api` in production builds.
 To test a production frontend build against Docker, run
-`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api npm run build`.
+`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api npm run frontend:build`.
 
 ---
 

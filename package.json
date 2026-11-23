@@ -2,19 +2,27 @@
   "name": "savecircle-mvp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "description": "SaveCircle MVP - Decentralized Group Savings, Contribution Scheduling & Rotating Payouts on Stellar",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
+    "dev": "npm run dev --workspace apps/frontend --",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "contract:build": "export PATH=\"$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH\" && cd contracts/group-savings && stellar contract build",
     "contract:test": "cd contracts/group-savings && cargo test -- --nocapture",
-    "backend:dev": "npm --prefix apps/backend run start:dev",
-    "backend:build": "npm --prefix apps/backend run build",
-    "backend:test": "npm --prefix apps/backend run test"
+    "backend:dev": "npm run start:dev --workspace apps/backend",
+    "backend:build": "npm run build --workspace apps/backend",
+    "backend:test": "npm run test --workspace apps/backend",
+    "frontend:dev": "npm run dev --workspace apps/frontend --",
+    "frontend:build": "npm run build --workspace savecircle-frontend",
+    "frontend:test": "npm run test --workspace savecircle-frontend",
+    "frontend:lint": "npm run lint --workspace savecircle-frontend"
   },
   "devDependencies": {
     "prettier": "^3.3.3",

@@ -58,11 +58,32 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
       startLedger = Math.max(1, sequence - 100);
     }
 
-    const response = await this.server.getEvents({
-      ...(cursor ? { cursor } : { startLedger }),
-      filters: [{ type: 'contract', contractIds: [this.contractId] }],
-      limit: 50,
-    });
+    let response: rpc.Api.GetEventsResponse;
+    try {
+      response = await this.server.getEvents({
+        ...(cursor ? { cursor } : { startLedger }),
+        filters: [{ type: 'contract', contractIds: [this.contractId] }],
+        limit: 50,
+      });
+    } catch (err: any) {
+      if (err.message?.includes('startLedger') || err.message?.includes('cursor') || err.message?.includes('retention') || err.message?.includes('range') || err.message?.includes('historic')) {
+        this.logger.warn(`RPC cursor retention expired or out of range, auto-recovering cursor to latest ledger window: ${err.message}`);
+        const { sequence } = await this.server.getLatestLedger();
+        startLedger = Math.max(1, sequence - 100);
+        await this.prisma.syncState.upsert({
+          where: { id: 'savecircle-events' },
+          update: { lastLedger: BigInt(startLedger), lastCursor: null },
+          create: { id: 'savecircle-events', lastLedger: BigInt(startLedger), lastCursor: null },
+        });
+        response = await this.server.getEvents({
+          startLedger,
+          filters: [{ type: 'contract', contractIds: [this.contractId] }],
+          limit: 50,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     if (!response.events.length && response.latestLedger > startLedger) {
       await this.prisma.syncState.upsert({

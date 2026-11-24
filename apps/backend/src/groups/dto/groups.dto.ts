@@ -56,6 +56,11 @@ export class CreateGroupDto {
   @IsOptional()
   @Matches(/^[a-fA-F0-9]{64}$/)
   creationTxHash?: string;
+
+  @ApiPropertyOptional({ description: 'Optional client idempotency key to prevent duplicate circle creation on retry' })
+  @IsString()
+  @IsOptional()
+  idempotencyKey?: string;
 }
 
 export class LinkOnChainDto {

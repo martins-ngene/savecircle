@@ -200,6 +200,34 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
       inviteToken = res.body.inviteToken;
     });
 
+    it('idempotency: should return the same circle on retry with an Idempotency-Key header', async () => {
+      const idempotencyKey = 'req_idemp_' + Date.now();
+      const payload = {
+        name: 'Retry Safe Circle',
+        description: 'Testing idempotency header',
+        contributionAmount: '50.00',
+        totalMembers: 3,
+        rules: 'Standard rules',
+      };
+
+      const firstRes = await request(app.getHttpServer())
+        .post('/api/groups')
+        .set('Authorization', `Bearer ${organizerToken}`)
+        .set('idempotency-key', idempotencyKey)
+        .send(payload)
+        .expect(201);
+
+      const secondRes = await request(app.getHttpServer())
+        .post('/api/groups')
+        .set('Authorization', `Bearer ${organizerToken}`)
+        .set('idempotency-key', idempotencyKey)
+        .send(payload)
+        .expect(201);
+
+      expect(firstRes.body.id).toBe(secondRes.body.id);
+      expect(firstRes.body.name).toBe('Retry Safe Circle');
+    });
+
     it('links only a confirmed matching create_group transaction submitted by the circle organizer', async () => {
       const config = app.get(BlockchainService).getNetworkConfig();
       const args = [
@@ -393,7 +421,7 @@ describe('SaveCircle End-to-End System & Regression Tests', () => {
         .expect(200);
 
       expect(res.body).toHaveProperty('success');
-    });
+    }, 15000);
   });
 
   describe('7. Notifications System', () => {

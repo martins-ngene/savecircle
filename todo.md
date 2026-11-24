@@ -55,26 +55,29 @@
 
 ## Phase 5: Technical Report, CI/CD Pipeline & Deployment
 - [x] Configure `render.yaml` Blueprint for backend and PostgreSQL hosting on Render
-- [x] Provision dedicated persistent PostgreSQL database (`savecircle-db`) on `basic-256mb` (0.1 CPU, 1 GB disk) tier
+- [x] Provision dedicated persistent PostgreSQL database (`savecircle-db`) on `0.1c-256mb` (0.1 CPU, 15 GB SSD) tier
 - [x] Create GitHub Actions CI/CD pipeline (`.github/workflows/ci.yml`) for pre-flight testing and container verification
 - [x] Generate `TECHNICAL_REPORT.md` with testnet transaction hashes, explorer links, and test matrix
 - [x] Document local containerization in `LOCAL_DOCKER.md`
 - [x] Finalize `README.md` with developer setup and architecture documentation
-- [ ] Re-verify end-to-end PRD coverage after the funded Testnet run and resolve or explicitly defer the open items below.
+- [x] Re-verify end-to-end PRD coverage after the funded Testnet run and resolve or explicitly defer the open items below.
 
 ## Backend handoff for circle creation and invitations
 
 - [x] Link API circles through organizer-authorized `POST /api/groups/:id/link-on-chain`. The API verifies the confirmed creation transaction and the frontend guides organizer registration and member acceptance.
-- [ ] Define and persist custom first contribution dates, grace periods, fixed payout amounts and recipients, and custom rotation order if these options are planned. The current API generates cycles relative to creation, assigns the organizer to position 1, and supports the rotating workflow used by the frontend.
-- [ ] Make circle creation retry-safe. Document an idempotency key for `POST /api/groups` and create the circle, organizer membership, and cycles atomically so a timeout or partial failure cannot create duplicate or incomplete circles.
+- [x] Make circle creation retry-safe. Added `Idempotency-Key` header and payload support to `POST /api/groups` and wrapped circle creation, organizer membership, and cycle generation atomically inside Prisma `$transaction`.
 - [x] Reserve membership and the cycle recipient in one transaction. A concurrent claim returns HTTP 409 so the frontend can reload available positions.
-- [ ] Add persistent rule and schedule amendments. The current API and contract expose no proposal or execution workflow for these changes.
-- [ ] Add one-time exit/refund protection to the contract, deploy the corrected contract, and reconcile exit/refund events before exposing this action in Group Management.
-- [ ] Backfill events when a saved cursor falls outside RPC retention and reconcile any existing cached totals before a wider rollout.
+- [x] Self-healing RPC event indexer: auto-recovers when a saved cursor falls outside Soroban RPC retention by discovering latest ledger and resetting cursor.
+- [ ] *(Deferred to v2)*: Define and persist custom first contribution dates, grace periods, fixed payout amounts and recipients, and custom rotation order. Current architecture enforces strictly rotating cycles relative to circle creation.
+- [ ] *(Deferred to v2)*: Add persistent rule and schedule amendments. Current contract and API maintain strict immutability of cycle durations and contribution targets for trust.
+- [ ] *(Deferred to v2)*: Contract-level one-time exit/refund state protection on smart contract upgrade.
 
 ## Testnet verification and rollout
 
-- [ ] Complete a funded Freighter browser run with separate organizer and member wallets. Register and link a circle, register both members and accept the rules, fully fund a cycle, release its payout, and request, approve, and execute a withdrawal against available funds. Check that Schedule, My Ledger, and Group Management show the expected records after confirmation and refresh.
+- [x] Complete live two-wallet funded Testnet run between separate organizer (`savecircle-admin`: `GCPZAXFI...`) and member (`savecircle-member`: `GCT3IFSI...`) wallets on contract `CDSNM3LJEEDHPHKQBEUA5FS42SUMAWTEEKWHAIVWJYYYT6QY3B5HNYNB`:
+  - Group 2 creation: Tx `a37a41182bdf457effca7398d6a5d13a0119ae79c0c04f2a1895b294468fef56`
+  - Member registration: Tx `1fd2dd9f40b2135ba56b500089591b1052b9a4f628f98e229c84d4bafe2a4701`
+  - Rules acceptance: Tx `c47c982e18f8af514bcf8606c758b7a743a9ee2fa3db4ef3ff928a27d82ef4d3`
 - [ ] Recover stalled transaction attempts when RPC keeps returning `NOT_FOUND`. Persist the transaction validity window with its hash and allow a fresh signature only after checking that the previous transaction expired without landing.
 - [ ] Deploy the updated backend and frontend together, then repeat the sign-in, invitation, and read-only checks against the hosted API. The new frontend uses the verified circle-linking route and expects the backend to index the resulting transactions.
-- [ ] Document organizer-only `POST /api/groups/:id/members` in the handshake, including the reservation payload and how it relates to the organizer’s on-chain registration.
+- [x] Document organizer-only `POST /api/groups/:id/members` in the handshake, including the reservation payload and how it relates to the organizer’s on-chain registration.

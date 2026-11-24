@@ -7,6 +7,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { GroupsService } from './groups.service';
@@ -23,8 +24,13 @@ export class GroupsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new savings circle' })
-  async createGroup(@CurrentUser() user: AuthUser, @Body() dto: CreateGroupDto) {
-    return this.groupsService.createGroup(user.walletAddress, dto);
+  async createGroup(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateGroupDto,
+    @Headers('idempotency-key') idempotencyKeyHeader?: string,
+  ) {
+    const key = idempotencyKeyHeader || dto.idempotencyKey;
+    return this.groupsService.createGroup(user.walletAddress, dto, key);
   }
 
   @Get('my-circles')

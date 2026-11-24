@@ -6,9 +6,19 @@ import { BlockchainService } from '../blockchain/blockchain.service';
 
 @Injectable()
 export class GroupsService {
+  private readonly idempotencyCache = new Map<string, { groupId: string; timestamp: number }>();
+
   constructor(private readonly prisma: PrismaService, private readonly blockchain: BlockchainService) {}
 
-  async createGroup(organizerWallet: string, dto: CreateGroupDto) {
+  async createGroup(organizerWallet: string, dto: CreateGroupDto, idempotencyKey?: string) {
+    if (idempotencyKey) {
+      const cacheKey = `${organizerWallet}:${idempotencyKey}`;
+      const cached = this.idempotencyCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+        return this.getGroupById(cached.groupId);
+      }
+    }
+
     const contributionPerMember = new Prisma.Decimal(dto.contributionAmount);
     const targetAmount = contributionPerMember.mul(dto.totalMembers);
     const frequency = dto.paymentFrequency || 'MONTHLY';
@@ -26,55 +36,58 @@ export class GroupsService {
       if (verifiedId !== dto.onChainGroupId) throw new BadRequestException('The on-chain group ID differs from the transaction result');
     }
 
-    const group = await this.prisma.savingsGroup.create({
-      data: {
-        name: dto.name,
-        description: dto.description,
-        organizerWallet,
-        usdcToken,
-        contributionAmount: contributionPerMember,
-        targetAmount,
-        totalMembers: dto.totalMembers,
-        paymentFrequency: frequency,
-        cycleDurationDays: durationDays,
-        approvalThreshold,
-        payoutModel: dto.payoutModel || 'ROTATING',
-        rules: dto.rules,
-        onChainGroupId: dto.onChainGroupId,
-        members: {
-          create: {
-            walletAddress: organizerWallet,
-            displayName: 'Organizer',
-            rotationPosition: 1,
-            rulesAccepted: true,
-            status: 'ACTIVE',
+    const group = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.savingsGroup.create({
+        data: {
+          name: dto.name,
+          description: dto.description,
+          organizerWallet,
+          usdcToken,
+          contributionAmount: contributionPerMember,
+          targetAmount,
+          totalMembers: dto.totalMembers,
+          paymentFrequency: frequency,
+          cycleDurationDays: durationDays,
+          approvalThreshold,
+          payoutModel: dto.payoutModel || 'ROTATING',
+          rules: dto.rules,
+          onChainGroupId: dto.onChainGroupId,
+          members: {
+            create: {
+              walletAddress: organizerWallet,
+              displayName: 'Organizer',
+              rotationPosition: 1,
+              rulesAccepted: true,
+              status: 'ACTIVE',
+            },
           },
         },
-      },
-      include: {
-        members: true,
-      },
-    });
+      });
 
-    // Create the rotating cycles
-    const now = new Date();
-    const cyclePromises = [];
-    for (let i = 1; i <= dto.totalMembers; i++) {
-      const dueDate = new Date(now.getTime() + i * durationDays * 24 * 60 * 60 * 1000);
-      cyclePromises.push(
-        this.prisma.contributionCycle.create({
+      const now = new Date();
+      for (let i = 1; i <= dto.totalMembers; i++) {
+        const dueDate = new Date(now.getTime() + i * durationDays * 24 * 60 * 60 * 1000);
+        await tx.contributionCycle.create({
           data: {
-            groupId: group.id,
+            groupId: created.id,
             cycleIndex: i,
             recipientWallet: i === 1 ? organizerWallet : 'UNASSIGNED',
             targetAmount,
             status: i === 1 ? 'PENDING' : 'UPCOMING',
             dueDate,
           },
-        }),
-      );
+        });
+      }
+
+      return created;
+    });
+
+    if (idempotencyKey) {
+      this.idempotencyCache.set(`${organizerWallet}:${idempotencyKey}`, {
+        groupId: group.id,
+        timestamp: Date.now(),
+      });
     }
-    await Promise.all(cyclePromises);
 
     return this.getGroupById(group.id);
   }

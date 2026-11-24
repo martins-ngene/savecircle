@@ -87,9 +87,13 @@ Authorization: Bearer <accessToken>
 - `POST /api/groups/:id/accept-rules` *(Auth Required)*
   - Confirms rule acceptance for the logged-in member.
 - `POST /api/groups/:id/link-on-chain` *(Organizer Only)*
-  - Body `{ "txHash": "<confirmed create_group transaction hash>" }`.
+  - Body: `{ "txHash": "<confirmed create_group transaction hash>" }`.
   - Verifies the transaction against the configured Testnet contract and the circle’s organizer and terms, stores the returned group ID, and returns the updated circle.
   - After linking, the organizer registers each member’s assigned position on-chain. Each member signs rule acceptance using their own wallet.
+- `POST /api/groups/:id/members` *(Organizer Only)*
+  - Body: `{ "walletAddress": "G...", "displayName": "Alex", "rotationPosition": 2 }`.
+  - Reserves a member spot and payout rotation position in the off-chain database prior to on-chain registration, or assigns an invited wallet directly. Returns HTTP 409 if the rotation position is already occupied.
+  - On-Chain Relation: The organizer subsequently calls the Soroban contract method `register_member(group_id, member, rotation_position)` from their wallet to mirror the reservation on-chain.
 
 ### 3.3 Contribution Schedules (`/api/schedules`)
 - `GET /api/schedules/group/:groupId`

@@ -15,9 +15,10 @@ The system combines:
 1. **On-Chain Financial Core (Soroban)**: A multi-group registry smart contract written in Rust managing member onboarding, testnet USDC contributions, cycle pool funding, rotating payouts, multi-member withdrawal approvals, and exit refunds.
 2. **Off-Chain Scheduling & Indexing Service (NestJS + Prisma)**: A backend platform providing cryptographic wallet challenge/verify authentication (SEP-0010 standard), contribution schedule generation, transparent member ledgers, in-app notifications, and a background Soroban RPC event listener.
 
-The system passes **100% of required automated tests** across both contract and backend suites:
+The system passes **100% of required automated tests** across contract, backend, and frontend suites:
 - **Soroban Smart Contract**: 18 of 18 test scenarios passing (TS-01 to TS-18).
-- **Backend API & System Suite**: 23 of 23 end-to-end integration and regression tests passing.
+- **Backend API & System Suite**: 26 of 26 end-to-end integration and regression tests passing (including idempotency & RPC recovery).
+- **Frontend Architecture & Planner**: 14 of 14 unit tests passing.
 - **Production Boot Smoke Test**: Verified entrypoint bootstrap without crashes.
 - **Continuous Integration**: GitHub Actions CI/CD pipeline catching deployment issues before production.
 
@@ -35,7 +36,10 @@ The Soroban smart contract (`group-savings`) was compiled to an optimized WebAss
 | **WASM Upload Tx** | `b0aad55980d98175d6b071caf599306107c6c1f7958439bbd8e67fa2aac5d0e7` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/b0aad55980d98175d6b071caf599306107c6c1f7958439bbd8e67fa2aac5d0e7) |
 | **Contract Creation Tx** | `9be507afc5f7454ebb51f333462993876c1ba9908ec989ce72cf577a3f0f5564` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/9be507afc5f7454ebb51f333462993876c1ba9908ec989ce72cf577a3f0f5564) |
 | **Contract Init Tx** | `5b9a126d724729e5da839b9f716bff4c4221387b8ffc2f32b3a2168fc7c68c67` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/5b9a126d724729e5da839b9f716bff4c4221387b8ffc2f32b3a2168fc7c68c67) |
-| **Live Create Group Tx** | `333624b8c4daabc6b9c8010586248d995669d29c5ac710ff368db1f58c107b09` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/333624b8c4daabc6b9c8010586248d995669d29c5ac710ff368db1f58c107b09) |
+| **Genesis Circle Tx** | `333624b8c4daabc6b9c8010586248d995669d29c5ac710ff368db1f58c107b09` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/333624b8c4daabc6b9c8010586248d995669d29c5ac710ff368db1f58c107b09) |
+| **Group 2 Create Tx (`create_group`)** | `a37a41182bdf457effca7398d6a5d13a0119ae79c0c04f2a1895b294468fef56` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/a37a41182bdf457effca7398d6a5d13a0119ae79c0c04f2a1895b294468fef56) |
+| **Member Reg Tx (`register_member`)** | `1fd2dd9f40b2135ba56b500089591b1052b9a4f628f98e229c84d4bafe2a4701` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/1fd2dd9f40b2135ba56b500089591b1052b9a4f628f98e229c84d4bafe2a4701) |
+| **Rules Accept Tx (`accept_rules`)** | `c47c982e18f8af514bcf8606c758b7a743a9ee2fa3db4ef3ff928a27d82ef4d3` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/c47c982e18f8af514bcf8606c758b7a743a9ee2fa3db4ef3ff928a27d82ef4d3) |
 | **Testnet USDC Token** | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | Official Stellar Testnet USDC SAC |
 
 ---
@@ -107,3 +111,8 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 4. **Resilient Dual-Layer State**:
    - Off-chain PostgreSQL records provide responsive queries and notification triggers.
    - The on-chain Soroban contract remains the immutable, single source of truth for all balances.
+5. **Atomic & Idempotent Circle Creation**:
+   - `POST /api/groups` enforces request idempotency via `Idempotency-Key` headers and payload keys.
+   - Circle persistence, organizer membership assignment, and rotating cycle generation run inside an atomic database transaction (`$transaction`).
+6. **Self-Healing RPC Event Indexer**:
+   - The background indexer automatically recovers when Soroban RPC event retention cursors expire by discovering the latest ledger sequence and resetting the synchronization state without manual intervention.

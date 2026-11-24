@@ -25,12 +25,17 @@ export const proofs = [
 ] as const;
 
 export const chapters = [
-  { start: 0, title: "Wallet sign-in" },
-  { start: 45, title: "Circle creation and invitation" },
-  { start: 90, title: "Member rules and payout position" },
-  { start: 135, title: "Contribution schedule and escrow" },
-  { start: 180, title: "Rotating payout eligibility" },
-  { start: 225, title: "Ledger and Testnet credentials" },
+  { start: 0, title: "Landing & Circle Planner" },
+  { start: 13, title: "Wallet sign-in & challenge" },
+  { start: 16, title: "Circle studio & creation" },
+  { start: 149, title: "Member invitation & rules" },
+  { start: 153, title: "Dashboard overview" },
+  { start: 158, title: "Contribution schedule & pool" },
+  { start: 166, title: "Rotating payout eligibility" },
+  { start: 168, title: "Financial ledger & reconciliation" },
+  { start: 172, title: "Approvals & group management" },
+  { start: 174, title: "Stellar Testnet credentials" },
+  { start: 178, title: "Live Observable Proof & Lightbox" },
 ];
 
 export const proofImage = (file: string) => `/recordings/screenshots/${file}`;

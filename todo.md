@@ -51,6 +51,7 @@
 - [x] Complete Handshake §3.2 in My Circles with the group detail endpoint and rule acceptance for invited members
 - [x] Replace Schedule and My Ledger previews with authenticated circle selection and the read endpoints in Handshake §§3.3–3.4
 - [x] Connect Stellar configuration and transaction status, verified circle linking, and wallet-signed contribution, payout, withdrawal, and membership actions
+- [x] Add the public `/proof` hub with recorded screen evidence, a chaptered walkthrough, and Testnet verification links
 
 ## Phase 5: Technical Report, CI/CD Pipeline & Deployment
 - [x] Configure `render.yaml` Blueprint for backend and PostgreSQL hosting on Render

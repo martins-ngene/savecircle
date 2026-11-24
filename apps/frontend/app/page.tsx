@@ -9,7 +9,7 @@ function Brand() {
 }
 
 function Navigation({ label }: { label: string }) {
-  return <nav aria-label={label}>{navigation.map(([id, text]) => <a key={id} href={`#${id}`}>{id === "planner" && label === "Footer" ? "Circle planner" : text}</a>)}{label === "Footer" && <a href="/dashboard">Dashboard</a>}</nav>;
+  return <nav aria-label={label}>{navigation.map(([id, text]) => <a key={id} href={`#${id}`}>{id === "planner" && label === "Footer" ? "Circle planner" : text}</a>)}{label === "Footer" && <><a href="/dashboard">Dashboard</a><a href="/proof">Product proof</a></>}</nav>;
 }
 
 function StartLink({ short = false }: { short?: boolean }) {
